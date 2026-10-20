@@ -10,6 +10,7 @@ import { Audio } from './audio.js';
 import { Effects } from './fx/effects.js';
 import { Post } from './post.js';
 import { Horde } from './enemies.js';
+import { loadAssets } from './assets.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -21,7 +22,8 @@ const QUALITY = {
 const $ = (id) => document.getElementById(id);
 
 class Game {
-  constructor() {
+  constructor(assets) {
+    this.assets = assets;
     this.quality = localStorage.getItem('hf-q') || 'medium';
     this.state = 'menu'; // menu | play | paused | dead
     const canvas = $('game');
@@ -35,9 +37,10 @@ class Game {
     scene.fog = new THREE.FogExp2(new THREE.Color().setRGB(0.27, 0.2, 0.24, THREE.LinearSRGBColorSpace), 0.0115);
     this.sky = makeSky(); scene.add(this.sky);
     const pm = new THREE.PMREMGenerator(r);
-    const skyScene = new THREE.Scene(); const skyCopy = makeSky(); skyScene.add(skyCopy);
-    this.env = pm.fromScene(skyScene, 0.03).texture;
-    scene.environment = this.env; scene.environmentIntensity = 0.55;
+    // image-based lighting + reflections from a real dusk HDRI (Poly Haven, CC0), turned so its sun sits near ours
+    this.env = pm.fromEquirectangular(assets.hdr).texture; assets.hdr.dispose();
+    scene.environment = this.env; scene.environmentIntensity = 0.5;
+    scene.environmentRotation.set(0, 2.2, 0);
 
     const sun = (this.sun = new THREE.DirectionalLight('#ffb27e', 3.4));
     sun.position.copy(SUN_DIR).multiplyScalar(70); sun.target.position.set(0, 0, 0);
@@ -54,14 +57,14 @@ class Game {
 
     // ---------- viewmodel (own scene so the gun never clips into walls) ----------
     this.vmScene = new THREE.Scene();
-    this.vmScene.environment = this.env; this.vmScene.environmentIntensity = 0.7;
+    this.vmScene.environment = this.env; this.vmScene.environmentIntensity = 0.6; this.vmScene.environmentRotation.set(0, 2.2, 0);
     this.vmCamera = new THREE.PerspectiveCamera(VM_HIP_FOV, innerWidth / innerHeight, 0.01, 10);
     this.vmScene.add(this.vmCamera);
     this.vmSun = new THREE.DirectionalLight('#ffb27e', 2.6); this.vmScene.add(this.vmSun, this.vmSun.target);
     this.vmHemi = new THREE.HemisphereLight('#8a80b0', '#3b2a22', 1.2); this.vmScene.add(this.vmHemi);
     this.vmLocal = new THREE.PointLight('#ff8a3a', 0, 4, 2); this.vmScene.add(this.vmLocal);
 
-    this.arena = buildArena(scene, this.quality);
+    this.arena = buildArena(scene, this.quality, assets);
     this.player = new Player(this.arena.colliders);
     this.fx = new Effects(scene, this.quality);
     this.audio = new Audio();
@@ -88,7 +91,7 @@ class Game {
     });
 
     this.horde = new Horde(scene, this.arena, {
-      player: this.player, fx: this.fx, audio: this.audio,
+      assets, player: this.player, fx: this.fx, audio: this.audio,
       onPlayerHit: (dmg, from, e) => this.onPlayerHit(dmg, from, e),
       onKill: (e, info) => this.onKill(e, info),
       onWaveStart: (n, count, boss) => boss ? this.banner(`BOSS WAVE ${n}`, 'Something big is coming', 'boss') : this.banner(`WAVE ${n}`, `${count} hostiles inbound`),
@@ -498,8 +501,13 @@ class Game {
   }
 }
 
-const game = new Game();
+const deployBtn = $('deploy');
+deployBtn.disabled = true; deployBtn.textContent = 'LOADING 0%';
+const assets = await loadAssets((k) => (deployBtn.textContent = `LOADING ${Math.round(k * 100)}%`));
+deployBtn.disabled = false; deployBtn.textContent = 'DEPLOY';
+const game = new Game(assets);
 window.game = game;
+window.__ready = true;
 
 // Hooks for automated testing (headless browsers have no pointer lock).
 window.__debug = {
