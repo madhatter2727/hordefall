@@ -6,8 +6,8 @@ import { Spring3, clamp, damp, lerp, rand, randSign, smooth, easeInOut } from '.
 const DEG = Math.PI / 180;
 const POSES = {
   ar: { hip: new THREE.Vector3(0.112, -0.096, -0.31), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.17) },
-  sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.16) },
-  mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.165) },
+  sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
+  mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
 };
 
 function flashTexture() {
@@ -116,6 +116,7 @@ export class Arsenal {
   // ------------------------------------------------------------
   update(dt, input, player, camera) {
     this.time += dt;
+    this.flashT -= dt;
     const w = this.current, d = w.def, model = w.model;
     const sprinting = player.sprinting && player.grounded;
 
@@ -224,8 +225,7 @@ export class Arsenal {
       this.redDot.uniforms.axis.value.copy(axis);
     }
 
-    // muzzle flash decay
-    this.flashT -= dt;
+    // muzzle flash (decayed at the start of the frame so it always shows for >= 1 frame)
     this.flash.visible = this.flashT > 0;
     this.flashLight.intensity = Math.max(0, this.flashT / 0.05) * 3.5;
     this.updateShells(dt);

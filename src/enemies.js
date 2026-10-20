@@ -99,8 +99,8 @@ function huskMaterial(char, ember) {
         totalEmissiveRadiance += vec3(6.0, 2.2, 0.6) * vGlow * (1.0 - vDissolve);
         float edge = smoothstep(vDissolve + 0.09, vDissolve, dn) * step(0.001, vDissolve);
         totalEmissiveRadiance += vec3(5.0, 1.6, 0.3) * edge * 2.0;
-        totalEmissiveRadiance += vec3(1.6, 1.3, 1.1) * vFlash;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), vFlash * 0.4);`);
+        totalEmissiveRadiance += vec3(0.9, 0.55, 0.35) * vFlash;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), vFlash * 0.25);`);
   };
   return m;
 }
@@ -556,7 +556,7 @@ export class Horde {
         tmpM.makeBasis(tX.multiplyScalar(s), tY.multiplyScalar(s * (P.kind === 'head' ? 1 : len / (P.len * s))), tZ.multiplyScalar(s));
         tmpM.setPosition(A);
         mesh.setMatrixAt(i, tmpM);
-        P.flash.array[i] = e.flash; P.diss.array[i] = e.dissolve * 1.05; P.heat.array[i] = e.dead ? e.heat * (1 + e.deadT * 1.5) : e.heat;
+        P.flash.array[i] = e.flash; P.diss.array[i] = e.dissolve * 1.05; P.heat.array[i] = e.dead ? e.heat * (1 + Math.min(e.deadT, 1.5) * 0.5) : e.heat;
       }
       mesh.count = n;
       mesh.instanceMatrix.needsUpdate = true; P.flash.needsUpdate = P.diss.needsUpdate = P.heat.needsUpdate = true;

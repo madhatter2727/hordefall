@@ -76,7 +76,7 @@ class Game {
     this.arsenal = new Arsenal(this.vmCamera, {
       audio: this.audio,
       shoot: (o, d, def, first) => this.shoot(o, d, def, first),
-      muzzleWorld: () => { this.fx.muzzle(this.muzzleNow); },
+      muzzleWorld: () => { this.fx.muzzle(this.muzzleNow); this.flushPellets(); },
       onFire: (def) => { this.crossKick = 1; this.shake(def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025); this.horde.alert(this.player.pos); },
       onAmmo: () => (this.hudDirty = true),
       onSwap: () => (this.hudDirty = true),
@@ -97,7 +97,7 @@ class Game {
     this.time = 0; this.trauma = 0; this.hitstop = 0; this.damageFx = 0; this.crossKick = 0;
     this.score = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0;
     this.muzzleNow = new THREE.Vector3(); this.hudDirty = true;
-    this.dmgNums = []; this.deadT = 0; this.fps = 60;
+    this.dmgNums = []; this.pelletAcc = new Map(); this.deadT = 0; this.fps = 60;
     this.tmpN = new THREE.Vector3();
 
     this.initUI();
@@ -191,6 +191,8 @@ class Game {
   }
   shoot(origin, dir, def, first) {
     if (first) { this.vmToWorld(this.arsenal.muzzleWorld(), this.muzzleNow); this.shotsFired++; }
+    this.pelletMode = def.pellets > 1;
+    if (first) this.pelletSounded = false;
     const n = this.tmpN;
     const wh = this.raycastWorld(origin, dir, 300, n);
     const wallT = wh ? wh.t : 300;
@@ -228,8 +230,16 @@ class Game {
     const mk = $('hitmarker');
     mk.className = ''; void mk.offsetWidth;
     mk.className = res.killed ? 'kill' : head ? 'head' : 'hit';
-    if (!res.killed) this.audio.play(head ? 'headshot' : 'hit');
-    if (this.dmgNumsOn) this.damageNumber(h.point, Math.round(dmg), head, res.killed);
+    if (!res.killed && !(this.pelletMode && this.pelletSounded)) { this.audio.play(head ? 'headshot' : 'hit'); this.pelletSounded = this.pelletMode; }
+    if (!this.dmgNumsOn) return;
+    if (this.pelletMode) { // shotgun: one number per target per shot
+      const a = this.pelletAcc.get(h.e) || { dmg: 0, point: h.point, head: false, killed: false };
+      a.dmg += dmg; a.head ||= head; a.killed ||= res.killed; this.pelletAcc.set(h.e, a);
+    } else this.damageNumber(h.point, Math.round(dmg), head, res.killed);
+  }
+  flushPellets() {
+    for (const a of this.pelletAcc.values()) this.damageNumber(a.point, Math.round(a.dmg), a.head, a.killed);
+    this.pelletAcc.clear();
   }
   onKill(e, info) {
     this.kills++; if (info.head) this.headshots++;
@@ -425,4 +435,5 @@ window.__debug = {
   spawn(n, dist) { game.horde.debugSpawn(n, dist); },
   god(on) { game.god = on; game.player.hurt = on ? () => {} : Player.prototype.hurt; },
   quality(q) { game.applyQuality(q); },
+  frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },
 };

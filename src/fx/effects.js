@@ -229,7 +229,7 @@ export class Effects {
 
   update(dt, camera, time) {
     this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera);
-    this.flashT -= dt; this.muzzleLight.intensity = Math.max(0, this.flashT / 0.05) * 30;
+    this.muzzleLight.intensity = Math.max(0, this.flashT / 0.05) * 30; this.flashT -= dt;
     this.embers.material.uniforms.time.value = time;
   }
   clear() { this.holes.clear(); this.blood.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
