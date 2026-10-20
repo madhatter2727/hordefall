@@ -34,7 +34,7 @@ export const TYPES = {
 // part index groups: severing an upper limb takes the whole arm/leg
 const SEVER_GROUP = { 2: [2, 3], 3: [3], 4: [4, 5], 5: [5], 6: [6, 7], 7: [7], 8: [8, 9], 9: [9], 1: [1] };
 const SEVER_THR = [1e9, 50, 55, 45, 55, 45, 75, 60, 75, 60];
-const SEVER_F = { ar: 0.55, sg: 1.0, mr: 1.45 };
+const SEVER_F = { ar: 0.55, sg: 1.0, mr: 1.45, smg: 0.5, lmg: 0.7, rv: 1.35, boom: 2.2 };
 const LIMB_MAX = 10, MAXI = 72 + LIMB_MAX;
 const SPIT_CHARGE = 0.85, SPIT_G = 14;
 
@@ -150,7 +150,8 @@ export class Horde {
   takeRig() { const R = this.rigPool.pop() || (() => { const r = this.factory.make(); this.scene.add(r.root); return r; })(); resetRig(R); R.root.visible = true; return R; }
   releaseRig(e) { if (!e.rig) return; resetRig(e.rig); e.rig.root.visible = false; this.rigPool.push(e.rig); e.rig = null; }
   releaseLimb(L) { if (!L.rig) return; resetRig(L.rig); L.rig.root.visible = false; this.limbRigPool.push(L.rig); L.rig = null; }
-  start() { this.running = true; this.intermission = 2.5; }
+  start() { this.running = true; this.intermission = 2.5; this.cleared = false; this.hold = false; }
+  ready(t = 2.5) { this.hold = false; this.intermission = t; }
   remaining() { return this.toSpawn + (this.bossDelay > 0 ? 1 : 0) + this.enemies.filter((e) => !e.dead).length; }
   aliveCount() { return this.enemies.filter((e) => !e.dead).length; }
   nextWave() {
@@ -464,9 +465,9 @@ export class Horde {
     if (this.running && P.alive) {
       if (this.bossDelay > 0) { this.bossDelay -= dt; if (this.bossDelay <= 0) this.spawnBoss(); }
       if (this.toSpawn <= 0 && this.aliveCount() === 0 && this.bossDelay <= 0) {
-        if (this.wave > 0 && this.intermission <= 0) { this.hooks.onWaveEnd?.(this.wave); this.intermission = 7; }
-        this.intermission -= dt;
-        if (this.intermission <= 0) this.nextWave();
+        // cleared: hold until the player readies up in the intermission shop
+        if (this.wave > 0 && !this.cleared) { this.cleared = true; this.hold = true; this.hooks.onWaveEnd?.(this.wave); }
+        if (!this.hold) { this.intermission -= dt; if (this.intermission <= 0) { this.cleared = false; this.nextWave(); } }
       } else if (this.toSpawn > 0) {
         this.spawnT -= dt;
         if (this.spawnT <= 0 && this.aliveCount() < 42) {

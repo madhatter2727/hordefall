@@ -1,7 +1,10 @@
+// Guns you spawn with (up to 3 carried; the rest are bought from wall-buys / the shop)
+export const START_LOADOUT = ['ar', 'sg'];
+
 // Per-weapon handling. Angles in degrees unless noted. Distances in meters.
 export const WEAPONS = [
   {
-    id: 'ar', name: 'AR-7 VANGUARD', type: 'Assault rifle', slot: 1,
+    id: 'ar', name: 'AR-7 VANGUARD', short: 'AR-7', type: 'Assault rifle', slot: 1,
     auto: true, rpm: 750, pellets: 1,
     damage: 28, damageMin: 19, falloffStart: 22, falloffEnd: 50, headMult: 1.7, limbMult: 0.8,
     mag: 30, reserve: 240, reload: 2.05, reloadEmpty: 2.55,
@@ -13,7 +16,7 @@ export const WEAPONS = [
     tracerChance: 0.65,
   },
   {
-    id: 'sg', name: 'KS-12 BREACHER', type: 'Pump shotgun', slot: 2,
+    id: 'sg', name: 'KS-12 BREACHER', short: 'KS-12', cost: 1500, type: 'Pump shotgun', slot: 2,
     auto: false, rpm: 75, pellets: 10, pump: true,
     damage: 17, damageMin: 3, falloffStart: 7, falloffEnd: 24, headMult: 1.4, limbMult: 0.9,
     mag: 7, reserve: 42, reloadStart: 0.42, reloadShell: 0.48, reloadEnd: 0.42,
@@ -25,7 +28,7 @@ export const WEAPONS = [
     tracerChance: 0.35,
   },
   {
-    id: 'mr', name: 'MR-30 LONGBOW', type: 'Marksman rifle', slot: 3,
+    id: 'mr', name: 'MR-30 LONGBOW', short: 'MR-30', cost: 1750, type: 'Marksman rifle', slot: 3,
     auto: false, rpm: 260, pellets: 1,
     damage: 92, damageMin: 76, falloffStart: 45, falloffEnd: 90, headMult: 2.4, limbMult: 0.85, pierce: 1,
     mag: 12, reserve: 84, reload: 2.45, reloadEmpty: 2.95,

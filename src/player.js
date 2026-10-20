@@ -13,6 +13,7 @@ export class Player {
     this.grounded = false; this.coyote = 0; this.landImpact = 0;
     this.sprinting = false; this.crouching = false; this.sliding = 0; this.slideDir = new THREE.Vector3();
     this.health = 100; this.maxHealth = 100; this.lastHurt = -10; this.alive = true;
+    this.armor = 0; this.speedMul = 1; this.regenDelay = 4; this.regenRate = 30;
     this.speed = 0; this.moveInput = new THREE.Vector2();
     this.stepTimer = 0; this.onStep = null; this.onLand = null; this.onJump = null; this.onSlide = null;
     this.forward = new THREE.Vector3();
@@ -21,7 +22,7 @@ export class Player {
 
   reset() {
     this.pos.set(0, 2.0, 1.5); this.vel.set(0, 0, 0); this.yaw = Math.PI; this.pitch = -0.05;
-    this.health = this.maxHealth; this.alive = true; this.sliding = 0;
+    this.health = this.maxHealth; this.alive = true; this.sliding = 0; this.armor = 0;
   }
 
   overlaps(minX, minY, minZ, maxX, maxY, maxZ) {
@@ -91,7 +92,7 @@ export class Player {
     const wl = Math.hypot(wx, wz); if (wl > 0) { wx /= wl; wz /= wl; }
     let maxSpeed = this.sprinting ? 8.4 : this.crouching ? 3.0 : 5.4;
     if (opts.ads) maxSpeed *= 0.62;
-    maxSpeed *= opts.weightSpeed;
+    maxSpeed *= opts.weightSpeed * this.speedMul;
     if (this.sliding > 0) {
       const f = this.grounded ? 4.2 : 0.6;
       this.vel.x = damp(this.vel.x, this.slideDir.x * 3, f, dt);
@@ -144,12 +145,14 @@ export class Player {
     this.camTilt = damp(this.camTilt, (this.sliding > 0 ? 0.08 : 0) - str * 0.012, 8, dt);
 
     // regen like modern shooters
-    if (this.alive && performance.now() / 1000 - this.lastHurt > 4 && this.health < this.maxHealth) this.health = Math.min(this.maxHealth, this.health + 30 * dt);
+    if (this.alive && performance.now() / 1000 - this.lastHurt > this.regenDelay && this.health < this.maxHealth) this.health = Math.min(this.maxHealth, this.health + this.regenRate * dt);
     this.forward.set(-sy * Math.cos(this.pitch), Math.sin(this.pitch), -cy * Math.cos(this.pitch));
   }
 
   hurt(amount) {
     if (!this.alive) return;
+    // armor plates soak most of a hit until they break
+    if (this.armor > 0) { const a = Math.min(this.armor, amount * 0.7); this.armor -= a; amount -= a; this.onArmor?.(this.armor <= 0); }
     this.health -= amount; this.lastHurt = performance.now() / 1000;
     if (this.health <= 0) { this.health = 0; this.alive = false; }
   }

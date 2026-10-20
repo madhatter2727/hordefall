@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPONS } from './defs.js';
+import { WEAPONS, START_LOADOUT } from './defs.js';
 import { buildWeaponModels } from './models.js';
 import { Spring3, clamp, damp, lerp, rand, randSign, smooth, easeInOut } from '../core/util.js';
 
@@ -53,14 +53,18 @@ export class Arsenal {
     this.redDot = this.models.redDot;
     this.root = new THREE.Group();
     vmCamera.add(this.root);
-    this.weapons = WEAPONS.map((def) => {
-      const model = this.models[def.id];
+    // every gun is built once; the player carries up to three of them (this.weapons = loadout)
+    this.all = {};
+    for (const def of WEAPONS) {
+      const model = this.models[def.id]; if (!model) continue;
       model.root.visible = false;
       model.leftHome = model.leftHand.position.clone();
       this.root.add(model.root);
-      return { def, model, mag: def.mag, reserve: def.reserve };
-    });
-    this.index = 0; this.current = this.weapons[0]; this.current.model.root.visible = true;
+      this.all[def.id] = { base: def, def: { ...def }, model, mag: def.mag, reserve: def.reserve };
+    }
+    this.mods = { dmg: 1, rof: 1, reload: 1, mag: 1, head: 1, explosive: 0 };
+    this.weapons = []; this.index = 0; this.current = null;
+    this.setLoadout(START_LOADOUT.filter((id) => this.all[id]));
     this.ads = 0; this.adsTarget = 0;
     this.cooldown = 0; this.shotIndex = 0; this.lastShot = -1; this.bloom = 0; this.buffered = 0;
     this.reload = null; this.swap = null; this.pumpT = 1; this.sprintBlend = 0; this.sprintOut = 0;
@@ -105,6 +109,43 @@ export class Arsenal {
     m.root.add(this.flashLight);
   }
 
+  setLoadout(ids) {
+    for (const w of Object.values(this.all)) w.model.root.visible = false;
+    this.weapons = ids.map((id) => this.all[id]);
+    for (const w of this.weapons) { w.mag = w.def.mag; w.reserve = w.def.reserve; }
+    this.index = 0; this.current = this.weapons[0]; this.current.model.root.visible = true;
+    this.swap = null; this.reload = null; this.melee = null;
+    if (this.flash) this.attachFlash();
+    this.hooks.onSwap?.(this.current.def);
+  }
+  // perk multipliers -> per-weapon effective stats (base defs stay untouched)
+  setMods(m) {
+    Object.assign(this.mods, m);
+    for (const w of Object.values(this.all)) {
+      const b = w.base, d = { ...b };
+      d.damage = b.damage * this.mods.dmg; d.damageMin = b.damageMin * this.mods.dmg; d.headMult = b.headMult * this.mods.head;
+      d.rpm = b.rpm * this.mods.rof;
+      for (const k of ['reload', 'reloadEmpty', 'reloadStart', 'reloadShell', 'reloadEnd']) if (b[k]) d[k] = b[k] / this.mods.reload;
+      d.mag = Math.round(b.mag * this.mods.mag); d.reserve = Math.round(b.reserve * this.mods.mag);
+      d.explosive = this.mods.explosive;
+      w.def = d;
+    }
+    this.hooks.onAmmo?.();
+  }
+  owns(id) { return this.weapons.includes(this.all[id]); }
+  // buy / pick up a gun: ammo if owned, a free slot if there is one, otherwise it replaces the gun in your hands
+  give(id) {
+    const w = this.all[id]; if (!w) return null;
+    if (this.weapons.includes(w)) { w.reserve = w.def.reserve; this.hooks.onAmmo?.(); return 'ammo'; }
+    w.mag = w.def.mag; w.reserve = w.def.reserve;
+    if (this.reload) this.resetReloadPose();
+    this.reload = null; this.melee = null;
+    if (this.weapons.length < 3) { this.weapons.push(w); this.swap = { t: 0, to: this.weapons.length - 1, switched: false }; }
+    else this.swap = { t: 0, to: this.index, switched: false, replace: w };
+    this.hooks.audio?.play('swap');
+    return this.swap.replace ? 'replaced' : 'added';
+  }
+
   select(i) {
     if (i === this.index || this.swap || i < 0 || i >= this.weapons.length) return;
     if (this.reload) this.resetReloadPose();
@@ -137,7 +178,8 @@ export class Arsenal {
     if (input.hit('Digit1')) this.select(0);
     if (input.hit('Digit2')) this.select(1);
     if (input.hit('Digit3')) this.select(2);
-    if (input.mouse.wheel) this.select((this.index + (input.mouse.wheel > 0 ? 1 : -1) + 3) % 3);
+    const nW = this.weapons.length;
+    if (input.mouse.wheel && nW > 1) this.select((this.index + (input.mouse.wheel > 0 ? 1 : -1) + nW) % nW);
     if (input.hit('KeyR')) this.startReload();
     if (input.hit('KeyV') && !this.melee && !this.swap) {
       this.melee = { t: 0, hit: false };
@@ -453,6 +495,7 @@ export class Arsenal {
       if (!s.switched) {
         s.switched = true;
         this.current.model.root.visible = false;
+        if (s.replace) this.weapons[s.to] = s.replace;
         this.index = s.to; this.current = this.weapons[s.to];
         this.current.model.root.visible = true;
         this.current.model.leftHand.position.copy(this.current.model.leftHome);
@@ -466,5 +509,10 @@ export class Arsenal {
   }
 
   refill() { for (const w of this.weapons) w.reserve = w.def.reserve; this.hooks.onAmmo?.(); }
-  resetAll() { for (const w of this.weapons) { w.mag = w.def.mag; w.reserve = w.def.reserve; } if (this.reload) this.resetReloadPose(); this.reload = null; this.melee = null; this.aimRecoil.pitch = this.aimRecoil.yaw = 0; }
+  resetAll() {
+    if (this.reload) this.resetReloadPose();
+    this.setMods({ dmg: 1, rof: 1, reload: 1, mag: 1, head: 1, explosive: 0 });
+    this.setLoadout(START_LOADOUT.filter((id) => this.all[id]));
+    this.aimRecoil.pitch = this.aimRecoil.yaw = 0;
+  }
 }

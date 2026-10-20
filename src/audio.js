@@ -138,6 +138,9 @@ export class Audio {
       case 'armor': this.tone({ dur: 0.06, type: 'square', freq: 2400, freqEnd: 2100, gain: 0.05 }); this.burst({ dur: 0.04, type: 'highpass', freq: 4500, gain: 0.25 }); break;
       case 'roar': { const g = o.gain ?? 1; this.burst({ dur: 1.4, type: 'bandpass', freq: 220, q: 2, gain: 0.9 * g, attack: 0.1, freqEnd: 120, rate: 0.5, send: 0.5 }); this.tone({ dur: 1.2, type: 'sawtooth', freq: 70, freqEnd: 48, gain: 0.25 * g, attack: 0.1, send: 0.4 }); break; }
       case 'slam': { const g = o.gain ?? 1; this.tone({ dur: 0.7, freq: 70, freqEnd: 28, gain: 0.9 * g }); this.burst({ dur: 0.6, type: 'lowpass', freq: 500, gain: 1.0 * g, freqEnd: 120, send: 0.5 }); break; }
+      case 'buy': this.tone({ dur: 0.08, type: 'triangle', freq: 880, gain: 0.12 }); this.tone({ t: 0.07, dur: 0.18, type: 'triangle', freq: 1320, gain: 0.12, send: 0.3 }); this.burst({ dur: 0.05, type: 'highpass', freq: 5000, gain: 0.15 }); break;
+      case 'perk': [392, 523, 659, 1046].forEach((f, i) => this.tone({ t: i * 0.06, dur: 0.5, type: 'triangle', freq: f, gain: 0.09, send: 0.6 })); this.burst({ dur: 0.6, type: 'bandpass', freq: 3000, q: 1, gain: 0.12, attack: 0.05, freqEnd: 6000, send: 0.5 }); break;
+      case 'shopOpen': this.burst({ dur: 0.5, type: 'lowpass', freq: 300, gain: 0.5, freqEnd: 1200 }); this.tone({ dur: 0.6, type: 'sine', freq: 110, freqEnd: 220, gain: 0.25, send: 0.4 }); break;
       case 'click': this.tone({ dur: 0.04, type: 'square', freq: 900, gain: 0.04 }); break;
     }
   }

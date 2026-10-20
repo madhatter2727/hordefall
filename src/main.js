@@ -11,6 +11,8 @@ import { Effects } from './fx/effects.js';
 import { Post } from './post.js';
 import { Horde } from './enemies.js';
 import { loadAssets } from './assets.js';
+import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
+import { WEAPONS } from './weapons/defs.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -25,7 +27,7 @@ class Game {
   constructor(assets) {
     this.assets = assets;
     this.quality = localStorage.getItem('hf-q') || 'medium';
-    this.state = 'menu'; // menu | play | paused | dead
+    this.state = 'menu'; // menu | play | paused | shop | dead
     const canvas = $('game');
     const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false }));
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
@@ -99,8 +101,8 @@ class Game {
       onBossDead: () => { this.banner('COLOSSUS DOWN', '+3000', 'boss'); this.shake(0.8); this.hitstop = 0.25; $('bossbar').classList.remove('on'); },
       onShake: (a) => this.shake(a),
       onAcid: (dmg, from, tick) => this.onAcid(dmg, from, tick),
-      onSever: (e, name) => { if (!e.dead || name === 'head') this.feed(name === 'head' ? '<b>DECAPITATED</b>' : '<b>DISMEMBERED</b>', 25); this.score += 25; },
-      onWaveEnd: (n) => { this.arsenal.refill(); this.banner(`WAVE ${n} CLEARED`, 'Ammo restocked'); this.audio.play('waveEnd'); this.score += 250 * n; },
+      onSever: (e, name) => { if (!e.dead || name === 'head') this.feed(name === 'head' ? '<b>DECAPITATED</b>' : '<b>DISMEMBERED</b>', 25); this.addScore(25); },
+      onWaveEnd: (n) => this.onWaveEnd(n),
     });
 
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
@@ -108,7 +110,8 @@ class Game {
 
     this.timer = new THREE.Timer(); this.timer.connect?.(document);
     this.time = 0; this.trauma = 0; this.hitstop = 0; this.damageFx = 0; this.crossKick = 0;
-    this.score = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0;
+    this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.runTime = 0;
+    this.perks = {}; this.ptsMul = 1; this.shopT = 0;
     this.muzzleNow = new THREE.Vector3(); this.hudDirty = true;
     this.dmgNums = []; this.pelletAcc = new Map(); this.deadT = 0; this.fps = 60;
     this.tmpN = new THREE.Vector3();
@@ -135,13 +138,20 @@ class Game {
     const dn = $('dmgnums'); dn.checked = this.dmgNumsOn; dn.onchange = () => { this.dmgNumsOn = dn.checked; localStorage.setItem('hf-dn', dn.checked ? '1' : '0'); };
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyP' && this.state === 'play') document.exitPointerLock();
+      if (this.state === 'shop') {
+        const k = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+        if (k >= 0) this.pickPerk(k);
+        if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); this.readyUp(); }
+      }
     });
+    $('ready').onclick = () => this.readyUp();
+    $('skip').onclick = () => this.skipPerk();
     const pool = $('dmgnums-layer');
     for (let i = 0; i < 28; i++) { const d = document.createElement('div'); d.className = 'dn'; pool.appendChild(d); this.dmgNums.push({ el: d, life: 0, pos: new THREE.Vector3() }); }
     this.show('menu');
   }
   show(screen) {
-    for (const id of ['menu', 'pause', 'dead']) $(id).classList.toggle('on', id === screen);
+    for (const id of ['menu', 'pause', 'dead', 'shop']) $(id).classList.toggle('on', id === screen);
     document.body.classList.toggle('playing', screen === null);
   }
   applyQuality(q) {
@@ -169,7 +179,8 @@ class Game {
   restart(fromMenu) {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
-    this.score = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0;
+    this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow();
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -177,6 +188,7 @@ class Game {
     if (this.input.locked || this.forceLock) this.show(null);
   }
   onLock(locked) {
+    if (this.state === 'shop') return;
     if (locked) {
       if (this.state === 'paused' || this.state === 'play') { this.state = 'play'; this.show(null); }
     } else if (this.state === 'play') { this.state = 'paused'; this.show('pause'); }
@@ -187,6 +199,98 @@ class Game {
     if (title.startsWith('WAVE') && !title.includes('CLEARED')) this.audio.play('waveStart');
   }
   shake(a) { this.trauma = Math.min(1, this.trauma + a); }
+
+  // ------------------------------------------------------------ points, perks, intermission shop
+  addScore(n, kill = false) {
+    this.score += n; this.pts += Math.round(kill ? n * this.ptsMul : n); this.hudDirty = true;
+  }
+  applyPerks() {
+    const L = (id) => this.perks[id] || 0, P = this.player;
+    this.arsenal.setMods({ dmg: 1 + 0.15 * L('dmg'), rof: 1 + 0.12 * L('rof'), reload: 1 + 0.25 * L('reload'), mag: 1 + 0.3 * L('mag'), head: 1 + 0.3 * L('head'), explosive: L('boom') });
+    P.maxHealth = 100 + 25 * L('hp'); P.health = Math.min(P.health, P.maxHealth);
+    P.regenDelay = 4 * Math.pow(0.65, L('regen')); P.regenRate = 30 * (1 + 0.5 * L('regen'));
+    P.speedMul = 1 + 0.08 * L('speed');
+    this.ptsMul = 1 + 0.25 * L('greed');
+  }
+  renderPerkRow() {
+    $('perkrow').innerHTML = PERKS.filter((p) => this.perks[p.id]).map((p) => `<div class="pk ${p.cat}" title="${p.name}">${p.icon}<i>${this.perks[p.id]}</i></div>`).join('');
+  }
+  onWaveEnd(n) {
+    this.banner(`WAVE ${n} CLEARED`, `+${250 * n} · Intermission`);
+    this.audio.play('waveEnd'); this.addScore(250 * n);
+    this.onWaveCleared?.(n);
+    this.shopT = 2.6; // let the banner land, then open the shop
+  }
+  openShop() {
+    this.state = 'shop';
+    this.shopDeal = dealPerks(this.perks); this.shopPicked = -1; this.shopLeft = 45;
+    $('sh-wave').textContent = this.horde.wave;
+    $('sh-s').textContent = this.shopDeal.length ? 'Choose one upgrade' : 'All upgrades maxed';
+    const box = $('perks'); box.classList.remove('picked');
+    box.innerHTML = this.shopDeal.map((p, i) => {
+      const lv = this.perks[p.id] || 0;
+      const pips = Array.from({ length: p.max }, (_, k) => `<i class="${k < lv ? 'on' : k === lv ? 'new' : ''}"></i>`).join('');
+      return `<div class="card ${p.cat}" data-i="${i}"><div class="ic">${p.icon}</div><div class="cat">${p.cat}</div><div class="nm">${p.name}</div><div class="ds">${p.desc}</div><div class="lv">${pips}</div><div class="key">${i + 1}</div></div>`;
+    }).join('');
+    box.querySelectorAll('.card').forEach((c) => (c.onclick = () => this.pickPerk(+c.dataset.i)));
+    $('skip').disabled = !this.shopDeal.length;
+    this.renderBuys();
+    this.audio.play('shopOpen');
+    document.exitPointerLock?.();
+    this.show('shop');
+  }
+  pickPerk(i) {
+    if (this.state !== 'shop' || this.shopPicked >= 0 || !this.shopDeal[i]) return;
+    const p = this.shopDeal[i]; this.shopPicked = i;
+    this.perks[p.id] = (this.perks[p.id] || 0) + 1;
+    if (p.id === 'hp') this.player.health += 25;
+    this.applyPerks(); this.renderPerkRow();
+    const box = $('perks'); box.classList.add('picked'); box.children[i].classList.add('sel');
+    box.children[i].querySelector('.new')?.classList.replace('new', 'on');
+    $('sh-s').textContent = `${p.name} acquired`; $('skip').disabled = true;
+    this.audio.play('perk'); this.renderBuys();
+  }
+  skipPerk() {
+    if (this.state !== 'shop' || this.shopPicked >= 0) return;
+    this.shopPicked = 99; this.pts += 300; $('perks').classList.add('picked'); $('skip').disabled = true;
+    $('sh-s').textContent = 'Upgrade skipped · +300 points'; this.audio.play('buy'); this.renderBuys();
+  }
+  shopItems() {
+    const A = this.arsenal, P = this.player, items = [];
+    items.push({ key: 'ammo', name: SHOP.ammo.name, desc: SHOP.ammo.desc, cost: SHOP.ammo.cost, ok: A.weapons.some((w) => w.reserve < w.def.reserve) });
+    items.push({ key: 'armor', name: SHOP.armor.name, desc: SHOP.armor.desc, cost: SHOP.armor.cost, ok: P.armor < SHOP.armor.max });
+    for (const d of WEAPONS) {
+      if (!d.cost || !A.all[d.id]) continue;
+      const owned = A.owns(d.id);
+      items.push({ key: 'gun:' + d.id, name: d.name, desc: owned ? 'Owned · refill its ammo' : A.weapons.length >= 3 ? `${d.type} · replaces ${A.current.def.short}` : d.type, cost: owned ? Math.round(d.cost / 2) : d.cost, ok: true, owned });
+    }
+    return items;
+  }
+  renderBuys() {
+    const box = $('buys');
+    box.innerHTML = this.shopItems().map((it) => `<button class="buy${it.owned ? ' owned' : ''}" data-k="${it.key}" ${it.ok && this.pts >= it.cost ? '' : 'disabled'}><span class="bn">${it.name}</span><span class="bd">${it.desc}</span><span class="bc">${it.cost.toLocaleString()}</span></button>`).join('');
+    box.querySelectorAll('.buy').forEach((b) => (b.onclick = () => this.buy(b.dataset.k, b)));
+    $('sh-pts').textContent = this.pts.toLocaleString();
+    $('sh-hp').textContent = Math.round(this.player.health) + '/' + this.player.maxHealth; $('sh-armor').textContent = Math.round(this.player.armor);
+  }
+  buy(key, btn) {
+    const it = this.shopItems().find((x) => x.key === key);
+    if (!it || !it.ok || this.pts < it.cost) { this.audio.play('dry'); return false; }
+    this.pts -= it.cost;
+    if (key === 'ammo') this.arsenal.refill();
+    else if (key === 'armor') this.player.armor = Math.min(SHOP.armor.max, this.player.armor + 50);
+    else if (key.startsWith('gun:')) this.arsenal.give(key.slice(4));
+    this.audio.play('buy'); this.hudDirty = true;
+    if (this.state === 'shop') { this.renderBuys(); const nb = $('buys').querySelector(`[data-k="${key}"]`); nb?.classList.add('flash'); }
+    return true;
+  }
+  readyUp() {
+    if (this.state !== 'shop') return;
+    this.state = 'play'; this.show(null);
+    this.input.lock();
+    this.horde.ready(2.5);
+    this.banner(`WAVE ${this.horde.wave + 1}`, 'Incoming');
+  }
 
   // ------------------------------------------------------------ combat
   vmToWorld(p, out) {
@@ -303,7 +407,7 @@ class Game {
   onKill(e, info) {
     this.kills++; if (info.head) this.headshots++;
     const pts = (e.type.points + (info.head ? 50 : 0)) * (1 + Math.floor((this.horde.wave - 1) / 3) * 0.5);
-    this.score += Math.round(pts);
+    this.addScore(Math.round(pts), true);
     this.audio.play('kill'); if (info.head) this.audio.play('headshot');
     if (!e.type.boss) { this.hitstop = e.type.brute ? 0.07 : 0.035; this.shake(e.type.brute ? 0.2 : 0.06); }
     this.feed(`${info.head ? '<b>HEADSHOT</b> ' : ''}${e.type.name}`, Math.round(pts));
@@ -369,7 +473,7 @@ class Game {
     const raw = Math.min(this.timer.getDelta(), 0.05);
     this.fps = lerp(this.fps, 1 / Math.max(raw, 1e-3), 0.05);
     const input = this.input, p = this.player, A = this.arsenal;
-    const active = this.state === 'play' || this.state === 'dead';
+    const active = this.state === 'play' || this.state === 'dead' || this.state === 'shop';
     let dt = active ? raw : 0;
     this.time += dt;
 
@@ -377,6 +481,13 @@ class Game {
     let worldDt = dt;
     if (this.hitstop > 0) { this.hitstop -= raw; worldDt = dt * 0.12; }
 
+    if (this.state === 'play') {
+      this.runTime += dt;
+      if (this.shopT > 0 && (this.shopT -= dt) <= 0 && p.alive) this.openShop();
+    } else if (this.state === 'shop') {
+      this.shopLeft -= raw; $('sh-timer').textContent = Math.max(0, Math.ceil(this.shopLeft));
+      if (this.shopLeft <= 0) this.readyUp();
+    }
     let ads = 0;
     if (this.state === 'play') {
       const d = A.def;
@@ -474,13 +585,16 @@ class Game {
       $('mag').classList.toggle('low', w.mag <= Math.ceil(w.def.mag * 0.25));
       $('score').textContent = this.score.toLocaleString();
       $('kills').textContent = this.kills;
-      document.querySelectorAll('.slot').forEach((s, i) => s.classList.toggle('sel', i === A.index));
+      $('pts').textContent = this.pts.toLocaleString();
+      const slots = [0, 1, 2].map((i) => { const w2 = A.weapons[i]; return `<span class="slot${i === A.index ? ' sel' : ''}${w2 ? '' : ' empty'}">${i + 1}${w2 ? ' ' + w2.def.short : ''}</span>`; }).join('');
+      if ($('slots').innerHTML !== slots) $('slots').innerHTML = slots;
     }
     $('mag').textContent = w.mag; $('reserve').textContent = w.reserve;
     const hint = $('hint');
     const hintText = A.reload ? 'RELOADING' : w.mag === 0 && w.reserve === 0 ? 'NO AMMO — SWAP' : w.mag <= Math.ceil(w.def.mag * 0.25) ? 'R  RELOAD' : '';
     if (hint.textContent !== hintText) hint.textContent = hintText;
-    $('hpfill').style.width = `${p.health}%`;
+    $('hpfill').style.width = `${(p.health / p.maxHealth) * 100}%`;
+    $('armorrow').classList.toggle('on', p.armor > 0); $('armorfill').style.width = `${Math.min(100, (p.armor / 150) * 100)}%`;
     $('hpfill').classList.toggle('low', p.health < 35);
     $('wave').textContent = this.horde.wave || '—';
     $('left').textContent = this.horde.remaining();
@@ -517,6 +631,9 @@ window.__debug = {
   look(yaw, pitch) { game.player.yaw = yaw; game.player.pitch = pitch; },
   teleport(x, y, z) { game.player.pos.set(x, y, z); game.player.vel.set(0, 0, 0); },
   select(i) { game.arsenal.select(i); },
+  give(id) { return game.arsenal.give(id); },
+  pts(n) { game.pts = n; game.hudDirty = true; },
+  clearWave() { const H = game.horde; H.toSpawn = 0; H.bossDelay = 0; for (const e of H.enemies) if (!e.dead) { e.hp = 0; H.kill(e, e.pos.clone(), new THREE.Vector3(0, 0, 1), 50, { id: 'ar' }, false); } },
   info() { const A = game.arsenal; return { state: game.state, weapon: A.def.id, mag: A.current.mag, ads: A.ads, fps: game.fps, cpuMs: game.cpuMs, hp: game.player.health, wave: game.horde.wave, alive: game.horde.aliveCount(), idle: game.horde.enemies.filter((e) => !e.dead && !e.aware).length, kills: game.kills, pos: game.player.pos.toArray() }; },
   spawn(n, dist, idle, type, ang) { return game.horde.debugSpawn(n, dist, idle, type ?? null, ang ?? null).length; },
   boss(dist = 16) { game.horde.wave = 4; game.horde.toSpawn = 0; game.horde.nextWave(); game.horde.bossDelay = 0; game.horde.toSpawn = 0; game.horde.debugSpawn(1, dist, false, 'boss', game.player.yaw + Math.PI); },

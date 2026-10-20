@@ -23,14 +23,15 @@
     <div class="wv"><span class="lbl">WAVE</span><span id="wave">—</span></div>
     <div class="wv"><span class="lbl">HOSTILES</span><span id="left">0</span></div>
   </div>
-  <div id="scorebox"><div><span class="lbl">SCORE</span><span id="score">0</span></div><div><span class="lbl">KILLS</span><span id="kills">0</span></div></div>
+  <div id="scorebox"><div><span class="lbl">SCORE</span><span id="score">0</span></div><div><span class="lbl">KILLS</span><span id="kills">0</span></div><div class="pts"><span class="lbl">POINTS</span><span id="pts">0</span></div></div>
   <div id="bossbar"><div class="bn">THE COLOSSUS</div><div class="bb"><div id="bossfill"></div></div><div class="bw">WEAK POINTS: HEAD · BACK CORE</div></div>
   <div id="feed"></div>
   <div id="banner"><div id="banner-t"></div><div id="banner-s"></div></div>
   <div id="hint"></div>
-  <div id="health"><span class="lbl">HP</span><div id="hpbar"><div id="hpfill"></div></div></div>
+  <div id="health"><div id="armorrow"><span class="lbl">AR</span><div id="armorbar"><div id="armorfill"></div></div></div><div class="hprow"><span class="lbl">HP</span><div id="hpbar"><div id="hpfill"></div></div></div></div>
+  <div id="perkrow"></div>
   <div id="ammo">
-    <div class="slots"><span class="slot">1</span><span class="slot">2</span><span class="slot">3</span></div>
+    <div class="slots" id="slots"></div>
     <div class="count"><span id="mag">30</span><span class="sep">/</span><span id="reserve">240</span></div>
     <div id="wname">AR-7 VANGUARD</div><div id="wtype">Assault rifle</div>
   </div>
@@ -45,7 +46,7 @@
     <div class="controls">
       <div><b>WASD</b> move</div><div><b>Shift</b> sprint</div><div><b>C / Ctrl</b> crouch · slide while sprinting</div>
       <div><b>Space</b> jump</div><div><b>LMB</b> fire</div><div><b>RMB</b> aim down sights</div>
-      <div><b>R</b> reload</div><div><b>V</b> melee</div><div><b>1 2 3 / wheel</b> weapons</div><div><b>Esc</b> pause</div>
+      <div><b>R</b> reload</div><div><b>V</b> melee</div><div><b>1 2 3 / wheel</b> weapons</div><div><b>F</b> buy / use</div><div><b>Esc</b> pause</div>
     </div>
     <div class="settings">
       <div class="row"><span>Quality</span><span class="seg"><button data-q="low">LOW</button><button data-q="medium">MEDIUM</button><button data-q="high">HIGH</button></span></div>
@@ -53,7 +54,7 @@
       <div class="row"><span>Volume</span><input id="vol" type="range" min="0" max="1" step="0.05" /></div>
       <div class="row"><span>Damage numbers</span><input id="dmgnums" type="checkbox" /></div>
     </div>
-    <p class="small">Best on desktop with a mouse. Everything here is code: no models, textures or sound files.</p>
+    <p class="small">Best on desktop with a mouse. Clear a wave, pick an upgrade, buy guns off the walls (F).</p>
   </div>
 </div>
 <div id="pause" class="screen">
@@ -75,6 +76,26 @@
       <div><span>Score</span><b id="d-score">0</b></div><div><span>Best</span><b id="d-best">0</b></div>
     </div>
     <button id="restart" class="big">DEPLOY AGAIN</button>
+  </div>
+</div>
+<div id="shop" class="screen">
+  <div class="shop">
+    <div class="sh-head">
+      <div class="sh-kicker">INTERMISSION</div>
+      <div class="sh-t">WAVE <span id="sh-wave">1</span> CLEARED</div>
+      <div class="sh-s" id="sh-s">Choose one upgrade</div>
+    </div>
+    <div id="perks" class="perks"></div>
+    <div class="sh-mid">
+      <div class="sh-pts"><span>POINTS</span><b id="sh-pts">0</b></div>
+      <div class="sh-vitals"><span>HP <b id="sh-hp">100</b></span><span>ARMOR <b id="sh-armor">0</b></span></div>
+    </div>
+    <div id="buys" class="buys"></div>
+    <div class="sh-foot">
+      <button id="skip">SKIP UPGRADE <em>+300 PTS</em></button>
+      <button id="ready" class="big">READY UP <small>ENTER</small></button>
+      <div class="sh-timer">AUTO-DEPLOY IN <b id="sh-timer">45</b>s</div>
+    </div>
   </div>
 </div>
 <script type="module" src="/src/main.js"></script>
