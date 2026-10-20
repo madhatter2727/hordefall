@@ -92,7 +92,7 @@ export function buildArena(scene, quality) {
   // ---------- central platform with stairs (verticality) ----------
   const PH = 2.0;
   solid(concreteMat, 10, PH, 9, 0, 0, 0, { walk: true });
-  add(stripeMat, new THREE.BoxGeometry(10.02, 0.18, 9.02), 0, PH - 0.09, 0);
+  add(stripeMat, new THREE.BoxGeometry(10.02, 0.18, 9.02), 0, PH - 0.105, 0);
   // low parapets for cover on top
   solid(concreteMat, 3.2, 0.9, 0.35, -3, PH, -4.3); solid(concreteMat, 3.2, 0.9, 0.35, 3, PH, 4.3);
   solid(concreteMat, 0.35, 0.9, 2.6, 4.8, PH, -2.6); solid(concreteMat, 0.35, 0.9, 2.6, -4.8, PH, 2.6);

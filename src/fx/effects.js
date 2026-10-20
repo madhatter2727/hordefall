@@ -225,7 +225,7 @@ export class Effects {
       this.add.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(1, 4)).add(new THREE.Vector3(rand(-2, 2), rand(0, 3), rand(-2, 2))), life: rand(0.2, 0.5), size: rand(0.012, 0.022), col: new THREE.Color(4, 1.4, 0.3), grav: 6, drag: 1.5, kind: 1 });
     }
   }
-  bloodPool(pos, size = 1) { this.blood.add(new THREE.Vector3(pos.x, 0.012 + Math.random() * 0.004, pos.z), new THREE.Vector3(0, 1, 0), rand(0.6, 1.2) * size); }
+  bloodPool(pos, size = 1, y = 0) { this.blood.add(new THREE.Vector3(pos.x, y + 0.012 + Math.random() * 0.004, pos.z), new THREE.Vector3(0, 1, 0), rand(0.6, 1.2) * size); }
 
   update(dt, camera, time) {
     this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera);

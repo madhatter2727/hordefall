@@ -5,9 +5,9 @@ import { Spring3, clamp, damp, lerp, rand, randSign, smooth, easeInOut } from '.
 
 const DEG = Math.PI / 180;
 const POSES = {
-  ar: { hip: new THREE.Vector3(0.125, -0.112, -0.29), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.098) },
-  sg: { hip: new THREE.Vector3(0.13, -0.11, -0.3), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.095) },
-  mr: { hip: new THREE.Vector3(0.125, -0.108, -0.31), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.165) },
+  ar: { hip: new THREE.Vector3(0.112, -0.096, -0.31), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.17) },
+  sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.16) },
+  mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.165) },
 };
 
 function flashTexture() {

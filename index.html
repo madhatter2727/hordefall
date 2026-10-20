@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HORDEFALL</title>
+<meta name="description" content="HORDEFALL: a horde shooter built from scratch on three.js and WebGL shaders. Three weapons, ADS, recoil, ragdolls." />
+<meta property="og:title" content="HORDEFALL" />
+<meta property="og:description" content="Hold the plaza. A browser horde shooter built on three.js." />
+<meta property="og:image" content="%SITE_URL%/og.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23140d0b'/><path d='M8 8l16 16M24 8L8 24' stroke='%23ff6a1c' stroke-width='3'/></svg>" />
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="cross"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="c"></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="dmgdir"></div>
+  <div id="dmgnums-layer"></div>
+  <div id="top">
+    <div class="wv"><span class="lbl">WAVE</span><span id="wave">—</span></div>
+    <div class="wv"><span class="lbl">HOSTILES</span><span id="left">0</span></div>
+  </div>
+  <div id="scorebox"><div><span class="lbl">SCORE</span><span id="score">0</span></div><div><span class="lbl">KILLS</span><span id="kills">0</span></div></div>
+  <div id="feed"></div>
+  <div id="banner"><div id="banner-t"></div><div id="banner-s"></div></div>
+  <div id="hint"></div>
+  <div id="health"><span class="lbl">HP</span><div id="hpbar"><div id="hpfill"></div></div></div>
+  <div id="ammo">
+    <div class="slots"><span class="slot">1</span><span class="slot">2</span><span class="slot">3</span></div>
+    <div class="count"><span id="mag">30</span><span class="sep">/</span><span id="reserve">240</span></div>
+    <div id="wname">AR-7 VANGUARD</div><div id="wtype">Assault rifle</div>
+  </div>
+  <div id="fps"></div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="panel">
+    <h1>HORDEFALL</h1>
+    <p class="tag">The plaza falls at dusk. Hold it.</p>
+    <button id="deploy" class="big">DEPLOY</button>
+    <div class="controls">
+      <div><b>WASD</b> move</div><div><b>Shift</b> sprint</div><div><b>C / Ctrl</b> crouch · slide while sprinting</div>
+      <div><b>Space</b> jump</div><div><b>LMB</b> fire</div><div><b>RMB</b> aim down sights</div>
+      <div><b>R</b> reload</div><div><b>1 2 3 / wheel</b> weapons</div><div><b>Esc</b> pause</div>
+    </div>
+    <div class="settings">
+      <div class="row"><span>Quality</span><span class="seg"><button data-q="low">LOW</button><button data-q="medium">MEDIUM</button><button data-q="high">HIGH</button></span></div>
+      <div class="row"><span>Sensitivity <em id="sensv"></em></span><input id="sens" type="range" min="0.2" max="3" step="0.05" /></div>
+      <div class="row"><span>Volume</span><input id="vol" type="range" min="0" max="1" step="0.05" /></div>
+      <div class="row"><span>Damage numbers</span><input id="dmgnums" type="checkbox" /></div>
+    </div>
+    <p class="small">Best on desktop with a mouse. Everything here is code: no models, textures or sound files.</p>
+  </div>
+</div>
+<div id="pause" class="screen">
+  <div class="panel">
+    <h2>PAUSED</h2>
+    <button id="resume" class="big">RESUME</button>
+    <button id="restart2">RESTART</button>
+    <div class="settings">
+      <div class="row"><span>Quality</span><span class="seg"><button data-q="low">LOW</button><button data-q="medium">MEDIUM</button><button data-q="high">HIGH</button></span></div>
+    </div>
+  </div>
+</div>
+<div id="dead" class="screen">
+  <div class="panel">
+    <h2 class="red">YOU FELL</h2>
+    <div class="stats">
+      <div><span>Wave</span><b id="d-wave">0</b></div><div><span>Kills</span><b id="d-kills">0</b></div>
+      <div><span>Headshots</span><b id="d-heads">0</b></div><div><span>Accuracy</span><b id="d-acc">0</b></div>
+      <div><span>Score</span><b id="d-score">0</b></div><div><span>Best</span><b id="d-best">0</b></div>
+    </div>
+    <button id="restart" class="big">DEPLOY AGAIN</button>
+  </div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -22,9 +22,9 @@ function wearTexture(seed, base = 0.4, amp = 0.25) {
 
 export function gunMaterials() {
   return {
-    metal: new THREE.MeshStandardMaterial({ color: '#2b2d31', metalness: 0.88, roughness: 1, roughnessMap: wearTexture(3, 0.36, 0.3), envMapIntensity: 1.2 }),
-    darkMetal: new THREE.MeshStandardMaterial({ color: '#16171a', metalness: 0.8, roughness: 1, roughnessMap: wearTexture(5, 0.45, 0.2) }),
-    polymer: new THREE.MeshStandardMaterial({ color: '#1d1e21', metalness: 0.05, roughness: 1, roughnessMap: wearTexture(7, 0.62, 0.2) }),
+    metal: new THREE.MeshStandardMaterial({ color: '#4a4d53', metalness: 0.65, roughness: 1, roughnessMap: wearTexture(3, 0.36, 0.3), envMapIntensity: 1.2 }),
+    darkMetal: new THREE.MeshStandardMaterial({ color: '#2a2c30', metalness: 0.55, roughness: 1, roughnessMap: wearTexture(5, 0.45, 0.2) }),
+    polymer: new THREE.MeshStandardMaterial({ color: '#2e3034', metalness: 0.05, roughness: 1, roughnessMap: wearTexture(7, 0.62, 0.2) }),
     fde: new THREE.MeshStandardMaterial({ color: '#80694c', metalness: 0.05, roughness: 1, roughnessMap: wearTexture(9, 0.66, 0.2) }),
     olive: new THREE.MeshStandardMaterial({ color: '#434936', metalness: 0.05, roughness: 1, roughnessMap: wearTexture(11, 0.64, 0.2) }),
     brass: new THREE.MeshStandardMaterial({ color: '#c99a4a', metalness: 1, roughness: 0.28 }),
