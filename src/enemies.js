@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
+import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE } from './rig.js';
 
 // ---------------------------------------------------------------------------
-// HUSKS: charred humanoids with ember cracks. Bodies are 15-joint skeletons drawn
-// with one InstancedMesh per body part; alive they run a procedural gait, dead
-// they become Verlet ragdolls and burn away with a dissolve shader.
+// HUSKS: skinned, mocap-animated zombies (see rig.js). Gameplay runs on a 15-joint
+// skeleton read back from the bones (hit zones, gore anchors); dead they become Verlet
+// ragdolls (or play a death clip) and rot away with a dissolve shader.
 // ---------------------------------------------------------------------------
 const J = { pelvis: 0, chest: 1, head: 2, lSh: 3, lEl: 4, lHa: 5, rSh: 6, rEl: 7, rHa: 8, lHip: 9, lKn: 10, lFt: 11, rHip: 12, rKn: 13, rFt: 14 };
 const NJ = 15;
@@ -35,7 +35,7 @@ export const TYPES = {
 const SEVER_GROUP = { 2: [2, 3], 3: [3], 4: [4, 5], 5: [5], 6: [6, 7], 7: [7], 8: [8, 9], 9: [9], 1: [1] };
 const SEVER_THR = [1e9, 50, 55, 45, 55, 45, 75, 60, 75, 60];
 const SEVER_F = { ar: 0.55, sg: 1.0, mr: 1.45 };
-const LIMB_MAX = 36, MAXI = 72 + LIMB_MAX;
+const LIMB_MAX = 10, MAXI = 72 + LIMB_MAX;
 const SPIT_CHARGE = 0.85, SPIT_G = 14;
 
 function emberTexture() {
@@ -53,112 +53,19 @@ function emberTexture() {
   }
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(2, 2); return t;
 }
-function charTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const x = c.getContext('2d'); const img = x.createImageData(256, 256);
-  for (let i = 0; i < 256 * 256; i++) { const v = 60 + Math.random() * 60 + Math.sin(i * 0.013) * 10; img.data.set([v, v * 0.92, v * 0.86, 255], i * 4); }
-  x.putImageData(img, 0, 0);
-  for (let i = 0; i < 300; i++) { x.fillStyle = `rgba(${Math.random() < 0.5 ? '20,16,14' : '120,100,90'},${Math.random() * 0.4})`; x.beginPath(); x.arc(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 10, 0, 6.28); x.fill(); }
-  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-
-function withGlow(g, v = 0) { g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1)); if (g.index) g = g.toNonIndexed(); return g; }
-function partGeometry(name, r) {
-  let len = LEN[name.replace(/[LR]$/, '')] || 0.3;
-  if (name === 'torso') {
-    const g = new THREE.CapsuleGeometry(r, len - r * 0.3, 6, 12); g.scale(1.22, 1, 0.78); g.translate(0, len / 2, 0);
-    // shoulder yoke + ribs bulge
-    const y = new THREE.CapsuleGeometry(0.1, 0.32, 4, 8); y.rotateZ(Math.PI / 2); y.scale(1, 1, 0.9); y.translate(0, len - 0.06, -0.01);
-    return mergeGeometries([withGlow(g), withGlow(y)]);
-  }
-  if (name === 'head') {
-    const neck = new THREE.CylinderGeometry(0.05, 0.065, len * 0.6, 8); neck.translate(0, len * 0.3, 0);
-    const skull = new THREE.SphereGeometry(r, 16, 12); skull.scale(0.9, 1.08, 1); skull.translate(0, len, 0.01);
-    const jaw = new THREE.BoxGeometry(0.15, 0.07, 0.12); jaw.translate(0, len - 0.09, 0.05);
-    const eyeL = new THREE.SphereGeometry(0.022, 8, 6); eyeL.translate(-0.042, len + 0.015, r * 0.86);
-    const eyeR = eyeL.clone(); eyeR.translate(0.084, 0, 0);
-    return mergeGeometries([withGlow(neck), withGlow(skull), withGlow(jaw), withGlow(eyeL, 1), withGlow(eyeR, 1)]);
-  }
-  const g = new THREE.CapsuleGeometry(r, len, 4, 8); g.translate(0, len / 2, 0);
-  if (name.startsWith('fore')) { const claw = new THREE.ConeGeometry(0.05, 0.14, 6); claw.translate(0, len + 0.07, 0.01); return mergeGeometries([withGlow(g), withGlow(claw)]); }
-  return mergeGeometries([withGlow(g)]);
-}
-
-function huskMaterial(char, ember) {
-  const m = new THREE.MeshStandardMaterial({ map: char, color: '#ffffff', roughness: 0.85, metalness: 0.05, emissive: new THREE.Color(2.4, 0.7, 0.18), emissiveMap: ember });
-  m.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>
-        attribute float iFlash; attribute float iDissolve; attribute float iHeat; attribute float iHue; attribute float iWound; attribute float glow;
-        varying float vFlash; varying float vDissolve; varying float vHeat; varying float vGlow; varying float vHue; varying float vWound; varying vec3 vLocal;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vFlash = iFlash; vHue = iHue; vWound = iWound; vDissolve = iDissolve; vHeat = iHeat; vGlow = glow; vLocal = position * 9.0 + vec3(float(gl_InstanceID) * 3.7);`);
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>
-        varying float vFlash; varying float vDissolve; varying float vHeat; varying float vGlow; varying float vHue; varying float vWound; varying vec3 vLocal;
-        float h3(vec3 p){ return fract(sin(dot(p, vec3(17.1, 113.7, 51.3))) * 43758.5453); }
-        float n3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-          return mix(mix(mix(h3(i), h3(i+vec3(1,0,0)), f.x), mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
-                     mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x), mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z); }`)
-      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-        float dn = n3(vLocal) * 0.65 + n3(vLocal * 2.7) * 0.35;
-        if (dn < vDissolve) discard;
-        // wounds: wet blood blotches that spread as the part takes damage
-        float wn = n3(vLocal * 0.55 + 7.0) * 0.7 + n3(vLocal * 1.9) * 0.3;
-        float wound = smoothstep(1.02 - vWound * 0.62, 1.08 - vWound * 0.62, wn + 0.12) * step(0.01, vWound);`)
-      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.22, wound);`)
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance *= vHeat * (0.75 + 0.25 * sin(vLocal.y * 0.7 + vLocal.x));
-        totalEmissiveRadiance += vec3(6.0, 2.2, 0.6) * vGlow * (1.0 - vDissolve);
-        float edge = smoothstep(vDissolve + 0.09, vDissolve, dn) * step(0.001, vDissolve);
-        totalEmissiveRadiance += vec3(5.0, 1.6, 0.3) * edge * 2.0;
-        float lumE = dot(totalEmissiveRadiance, vec3(0.3, 0.59, 0.11));
-        totalEmissiveRadiance = mix(totalEmissiveRadiance, vec3(0.45, 1.0, 0.12) * lumE * 1.8, vHue);
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 1.0, 0.72), vHue);
-        totalEmissiveRadiance += vec3(0.9, 0.55, 0.35) * vFlash;
-        totalEmissiveRadiance *= 1.0 - wound * 0.85;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.004, 0.006), wound * 0.92);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), vFlash * 0.25);`);
-  };
-  return m;
-}
-
-function huskDepthMaterial() {
-  const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
-  m.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float iDissolve; varying float vDissolve;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDissolve = iDissolve;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vDissolve;')
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vDissolve > 0.001) discard;');
-  };
-  return m;
-}
-
 const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tN = new THREE.Vector3();
-const tmpM = new THREE.Matrix4(), tX = new THREE.Vector3(), tY = new THREE.Vector3(), tZ = new THREE.Vector3(), tS = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tX = new THREE.Vector3(), tY = new THREE.Vector3(), tZ = new THREE.Vector3(), tS = new THREE.Vector3();
 
 export class Horde {
   constructor(scene, arena, hooks) {
     this.scene = scene; this.arena = arena; this.hooks = hooks; this.player = hooks.player;
     this.colliders = arena.colliders.filter((c) => !c.ground);
     this.max = 72; this.maxI = MAXI;
-    const char = charTexture(), ember = emberTexture();
-    this.material = huskMaterial(char, ember);
-    this.depthMat = huskDepthMaterial();
-    this.parts = PARTS.map(([name, a, b, r, kind]) => {
-      const geo = partGeometry(name, r);
-      const mk = (n) => new THREE.InstancedBufferAttribute(new Float32Array(MAXI).fill(n), 1).setUsage(THREE.DynamicDrawUsage);
-      const flash = mk(0), diss = mk(0), heat = mk(1), hue = mk(0), wound = mk(0);
-      geo.setAttribute('iHue', hue); geo.setAttribute('iWound', wound); geo.setAttribute('iFlash', flash); geo.setAttribute('iDissolve', diss); geo.setAttribute('iHeat', heat);
-      const mesh = new THREE.InstancedMesh(geo, this.material, MAXI);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0;
-      mesh.customDepthMaterial = this.depthMat;
-      mesh.setColorAt(0, new THREE.Color(1, 1, 1));
-      scene.add(mesh);
-      return { name, a, b, r, kind, mesh, flash, diss, heat, hue, wound, len: LEN[name.replace(/[LR]$/, '')] };
-    });
+    const ember = emberTexture();
+    this.parts = PARTS.map(([name, a, b, r, kind]) => ({ name, a, b, r, kind, len: LEN[name.replace(/[LR]$/, '')] }));
+    this.factory = new ZombieFactory(hooks.assets.models.zombie);
+    this.rigPool = []; this.limbRigPool = [];
+    for (let i = 0; i < 20; i++) { const R = this.factory.make(); scene.add(R.root); this.rigPool.push(R); }
     this.pool = [];
     this.enemies = [];
     // flow field
@@ -200,7 +107,10 @@ export class Horde {
     for (const pi of [3, 5]) add(new THREE.CylinderGeometry(0.07, 0.085, 0.2, 10), armor, pi, L(0, 0.13, 0));  // gauntlets
     for (const pi of [6, 8]) add(rb(0.17, 0.3, 0.09, 0.03), armor, pi, L(0, 0.2, 0.08));                  // thigh plates
     for (const pi of [7, 9]) add(rb(0.12, 0.26, 0.07, 0.025), armor, pi, L(0, 0.2, 0.06));                // shin guards
-    add(new THREE.TorusGeometry(0.11, 0.018, 6, 20, Math.PI), core, 1, L(0, 0.255, 0.04, Math.PI / 2 - 0.2, 0, 0)); // glowing brow band (head weak point)
+    add(new THREE.TorusGeometry(0.105, 0.016, 6, 20, Math.PI), core, 1, L(0, 0.2, 0.03, Math.PI / 2 - 0.2, 0, 0)); // glowing brow band (head weak point)
+    const spike = new THREE.ConeGeometry(0.035, 0.18, 6);
+    for (const pi of [2, 4]) for (let k = 0; k < 3; k++) add(spike, armor, pi, L((k - 1) * 0.05, 0.08 + k * 0.02, -0.02 - k * 0.03, -0.5 - k * 0.2, 0, (k - 1) * 0.3));
+    for (let k = 0; k < 4; k++) add(spike, armor, 0, L((k - 1.5) * 0.09, 0.42, -0.14, -1.1, 0, 0)); // spine spikes
     
     this.rig = { pieces, core, halo, m: new THREE.Matrix4() };
   }
@@ -222,7 +132,7 @@ export class Horde {
   // orthonormal frame on a bone (x across the shoulders, y along the bone), uniformly scaled
   partBasis(e, A, B, s, out) {
     tY.copy(B).sub(A).normalize();
-    tX.copy(e.joints[J.rSh]).sub(e.joints[J.lSh]);
+    tX.copy(e.joints[J.lSh]).sub(e.joints[J.rSh]); // rig convention: character's left is +x
     tZ.crossVectors(tX, tY); if (tZ.lengthSq() < 1e-6) tZ.set(Math.sin(e.yaw), 0, Math.cos(e.yaw));
     tZ.normalize(); tX.crossVectors(tY, tZ).normalize();
     out.makeBasis(tX.multiplyScalar(s), tY.multiplyScalar(s), tZ.multiplyScalar(s)); out.setPosition(A);
@@ -231,13 +141,15 @@ export class Horde {
 
   // ---------------------------------------------------------------- waves
   reset() {
-    for (const e of this.enemies) this.pool.push(e);
-    for (const L of this.limbs) this.limbPool.push(L);
+    for (const e of this.enemies) { this.releaseRig(e); this.pool.push(e); }
+    for (const L of this.limbs) { this.releaseLimb(L); this.limbPool.push(L); }
     this.limbs.length = 0; this.puddles.length = 0; this.boss = null; this.bossDelay = 0; this.bossWave = false;
     for (const pr of this.proj) { pr.state = 'free'; pr.mesh.visible = false; }
     this.enemies.length = 0; this.wave = 0; this.toSpawn = 0; this.running = false; this.waveKilled = 0; this.waveTotal = 0;
-    this.syncInstances();
   }
+  takeRig() { const R = this.rigPool.pop() || (() => { const r = this.factory.make(); this.scene.add(r.root); return r; })(); resetRig(R); R.root.visible = true; return R; }
+  releaseRig(e) { if (!e.rig) return; resetRig(e.rig); e.rig.root.visible = false; this.rigPool.push(e.rig); e.rig = null; }
+  releaseLimb(L) { if (!L.rig) return; resetRig(L.rig); L.rig.root.visible = false; this.limbRigPool.push(L.rig); L.rig = null; }
   start() { this.running = true; this.intermission = 2.5; }
   remaining() { return this.toSpawn + (this.bossDelay > 0 ? 1 : 0) + this.enemies.filter((e) => !e.dead).length; }
   aliveCount() { return this.enemies.filter((e) => !e.dead).length; }
@@ -309,14 +221,21 @@ export class Horde {
     e.heat = T.heat * rand(0.8, 1.2);
     e.lastHit = -1; e.rest = {}; e.pooled = false; e.near = null;
     e.maxHp = e.hp; e.lost = 0; e.limbDmg = e.limbDmg || new Float32Array(10); e.limbDmg.fill(0); e.wound = e.wound || new Float32Array(10); e.wound.fill(0);
-    e.crawl = false; e.armless = false; e.stumps = []; e.facePlayer = false;
+    e.crawl = false; e.crawlRef = false; e.armless = false; e.stumps = []; e.facePlayer = false;
     e.spitCd = rand(1.2, 2.5); e.charge = -1; e.orb = null; e.strafe = Math.random() < 0.5 ? -1 : 1; e.strafeT = rand(1.5, 3); e.spitRecoil = 0;
     e.bs = 'walk'; e.bt = 0; e.chargeCd = 3; e.slamCd = 2; e.stunDur = 1; e.chargeDir = e.chargeDir || new THREE.Vector3(); e.chargeHit = false; e.prePos = e.prePos || new THREE.Vector3();
     e.aware = !idle; e.alertIn = undefined; e.wander = new THREE.Vector3(rand(-28, 28), 0, rand(-28, 28)); e.wanderT = rand(4, 9);
     // walk in through the nearest gate
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
     e.gatePt.copy(g); e.outside = Math.max(Math.abs(at.x), Math.abs(at.z)) > ARENA.half - 2;
-    this.pose(e, 0);
+    e.rig = this.takeRig(); e.ragdoll = false; e.ref = e.ref || {}; e.anim = null;
+    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.8, 0.74, 0.72] : [rand(0.9, 1.25), rand(0.85, 1.15), rand(0.85, 1.1)];
+    e.rig.u.uTint.value.setRGB(...tint); e.rig.u.uHue.value = T.hue || 0;
+    for (const a of Object.values(e.rig.actions)) a.time = rand(0, 3);
+    if (T.boss) { const B = e.rig.bones; B.Spine2.scale.set(1.32, 1.12, 1.4); B.Neck.scale.setScalar(0.8); B.LeftArm.scale.setScalar(1.18); B.RightArm.scale.setScalar(1.18); B.LeftUpLeg.scale.set(1.2, 1, 1.2); B.RightUpLeg.scale.set(1.2, 1, 1.2); e.rig.u.uEmber.value = 1; }
+    else if (T.brute) e.rig.bones.Spine2.scale.set(1.18, 1.05, 1.22);
+    else if (T.hue) e.rig.bones.Spine1.scale.set(1.12, 1, 1.25);
+    this.animate(e, 0);
     this.enemies.push(e);
     return e;
   }
@@ -472,8 +391,9 @@ export class Horde {
     const PARENT = { 1: 0, 2: 0, 3: 2, 4: 0, 5: 4, 6: 0, 7: 6, 8: 0, 9: 8 };
     e.wound[PARENT[idxs[0]]] = 1;
     const jIdx = [PARTS[idxs[0]][1], ...idxs.map((i) => PARTS[i][2])];
-    // detached limb: a little Verlet chain that tumbles and burns away
-    const L = this.limbs.length >= LIMB_MAX ? this.limbs.shift() : this.limbPool.pop() || { pts: [0, 1, 2].map(() => new THREE.Vector3()), prev: [0, 1, 2].map(() => new THREE.Vector3()), side: new THREE.Vector3(), len: [0, 0] };
+    // detached limb: a little Verlet chain (drawn with its own rig showing just that limb) that tumbles and rots away
+    if (this.limbs.length >= LIMB_MAX) { const old = this.limbs.shift(); this.releaseLimb(old); this.limbPool.push(old); }
+    const L = this.limbPool.pop() || { pts: [0, 1, 2].map(() => new THREE.Vector3()), prev: [0, 1, 2].map(() => new THREE.Vector3()), side: new THREE.Vector3(), len: [0, 0] };
     L.n = jIdx.length; L.segs = idxs; L.wound = 1; L.t = 0; L.dis = 0; L.scale = e.scale; L.hue = e.type.hue || 0; L.heat = e.heat * 1.4;
     L.side.copy(e.joints[J.rSh]).sub(e.joints[J.lSh]).normalize();
     const h = 1 / 120, base = dir.clone().setY(0).normalize().multiplyScalar(rand(2.5, 5)).add(e.vel.clone().multiplyScalar(0.5)); base.y += rand(2.2, 4.2);
@@ -483,6 +403,13 @@ export class Horde {
       L.prev[k].copy(L.pts[k]).addScaledVector(v, -h);
     }
     for (let k = 0; k < L.n - 1; k++) L.len[k] = L.pts[k].distanceTo(L.pts[k + 1]);
+    if (e.rig) {
+      L.rig = this.limbRigPool.pop() || (() => { const r = this.factory.make(); this.scene.add(r.root); return r; })();
+      makeLimb(L.rig, e.rig, idxs[0], e.joints, L.pts.slice(0, L.n));
+      L.rig.u.uWound.value[idxs[0]] = 0.85; if (idxs[1] !== undefined) L.rig.u.uWound.value[idxs[1]] = 0.6;
+      e.rig.bones[PART_BONE[idxs[0]]].scale.setScalar(0.0001);
+      addStump(this.factory, e.rig, idxs[0], (idxs[0] === 1 ? 0.075 : idxs[0] >= 6 ? 0.085 : 0.06) * 1.0);
+    }
     this.limbs.push(L);
     const stump = e.joints[jIdx[0]];
     this.hooks.fx.ichor(stump, dir, 1.4, !!e.type.hue);
@@ -509,6 +436,11 @@ export class Horde {
       for (let i = 0; i < 4; i++) this.hooks.fx.ichor(e.joints[[J.chest, J.head, J.pelvis, J.chest][i]], new THREE.Vector3(rand(-1, 1), 1, rand(-1, 1)), 3);
       this.hooks.audio.play('roar', { gain: 0.8 }); this.hooks.onBossDead?.(e);
     }
+    // violent / headshot / dismembered / airborne kills go limp (ragdoll); plain body kills play the mocap death
+    const clip = !e.crawl && !head && !e.lost && e.grounded && (e.type.boss || (def.id === 'ar' && Math.random() < 0.6));
+    e.ragdoll = !clip;
+    if (clip) { play(e.rig, 'die', 0.15, e.type.boss ? 0.75 : rand(1.1, 1.4), true); e.anim = 'die'; }
+    else captureRef(e.rig, e.joints, e.ref);
     // ragdoll: previous positions encode velocity (motion + shot impulse, strongest near the hit)
     const h = 1 / 120;
     const v = e.vel.clone().add(e.kb);
@@ -564,7 +496,12 @@ export class Horde {
     const dir = new THREE.Vector3(), toP = new THREE.Vector3(), sep = new THREE.Vector3(), perp = new THREE.Vector3();
     for (const e of this.enemies) {
       if (e.stumps.length) this.updateStumps(e, dt);
-      if (e.dead) { e.flash = Math.max(0, e.flash - dt * 9); this.updateRagdoll(e, dt); continue; }
+      if (e.dead) {
+        e.flash = Math.max(0, e.flash - dt * 9);
+        if (e.ragdoll) { this.updateRagdoll(e, dt); if (e.deadT < 3.6) solveFromJoints(e.rig, e.joints, e.ref); }
+        else this.updateDeathClip(e, dt);
+        continue;
+      }
       const T = e.type;
       toP.copy(P.pos).sub(e.pos); const dy = toP.y; toP.y = 0;
       const dist = toP.length(); toP.divideScalar(dist || 1);
@@ -675,7 +612,7 @@ export class Horde {
       e.headSnapV += (-e.headSnap * 160 - e.headSnapV * 12) * dt; e.headSnap += e.headSnapV * dt;
       e.twistV += (-e.twist * 120 - e.twistV * 12) * dt; e.twist += e.twistV * dt;
       e.flash = Math.max(0, e.flash - dt * 9);
-      this.pose(e, time);
+      this.animate(e, dt);
     }
     this.updateProjectiles(dt);
     this.updateLimbs(dt);
@@ -683,9 +620,9 @@ export class Horde {
     // recycle burned corpses
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
-      if (e.dead && e.dissolve >= 1) { this.enemies.splice(i, 1); this.pool.push(e); if (e === this.boss) this.boss = null; }
+      if (e.dead && e.dissolve >= 1) { this.enemies.splice(i, 1); this.releaseRig(e); this.pool.push(e); if (e === this.boss) this.boss = null; }
     }
-    this.syncInstances();
+    this.syncRigs();
     this.updateBossRig(time);
   }
   // ---------------------------------------------------------------- boss
@@ -827,7 +764,8 @@ export class Horde {
     for (let i = this.limbs.length - 1; i >= 0; i--) {
       const L = this.limbs[i]; L.t += dt;
       if (L.t > 2.6) L.dis = Math.min(1, L.dis + dt / 1.3);
-      if (L.dis >= 1) { this.limbs.splice(i, 1); this.limbPool.push(L); continue; }
+      if (L.dis >= 1) { this.limbs.splice(i, 1); this.releaseLimb(L); this.limbPool.push(L); continue; }
+      if (L.rig) L.rig.u.uDiss.value = L.dis * 1.05;
       if (L.t > 4) continue;
       for (let st = 0; st < steps; st++) {
         for (let k = 0; k < L.n; k++) {
@@ -841,6 +779,7 @@ export class Horde {
           if (j.y < g + rad) { j.y = g + rad; const p = L.prev[k]; p.x = lerp(p.x, j.x, 0.3); p.z = lerp(p.z, j.z, 0.3); if (p.y < j.y) p.y = lerp(p.y, j.y, 0.6); }
         }
       }
+      if (L.rig) poseLimb(L.rig, L.pts.slice(0, L.n));
       if (Math.random() < 0.25 && L.t < 1.5) this.hooks.fx.stumpSpray(L.pts[0], tA.set(0, 1, 0), !!L.hue);
     }
   }
@@ -850,67 +789,6 @@ export class Horde {
     return { ...o, pan: clamp((dx * rx + dz * rz) / (d + 1), -0.9, 0.9), gain: clamp(10 / (d + 4), 0.06, 1) };
   }
 
-  // procedural run cycle in the enemy's local frame (x right, y up, z forward)
-  pose(e, time) {
-    if (e.crawl) return this.poseCrawl(e);
-    const T = e.type, s = e.scale, sp = clamp(e.speedNow / 6, 0, 1.4), ph = e.phase;
-    const L = [];
-    // state-driven body language: spitter rears back to charge, boss winds up charge / slam
-    let leanAdd = 0, armOv = null, headUp = 0;
-    if (e.charge >= 0) { const k = Math.min(1, e.charge / SPIT_CHARGE); leanAdd = -0.4 * k; headUp = -0.5 * k; armOv = [lerp(1, 0.5, k), lerp(1, 0.5, k), 1.4]; }
-    if (e.spitRecoil > 0) leanAdd += 0.5 * e.spitRecoil;
-    if (T.boss) {
-      const k = clamp(e.bt / 0.8, 0, 1);
-      if (e.bs === 'chargeWind') { leanAdd = 0.4 * k; armOv = [0.15, 0.15, 0.4]; headUp = -0.3; }
-      else if (e.bs === 'charge') { leanAdd = 0.5; armOv = [0.2, 0.2, 0.5]; }
-      else if (e.bs === 'stun') { leanAdd = 0.7; armOv = [0.15, 0.25, 0.2]; headUp = 0.5; }
-      else if (e.bs === 'slamWind') { leanAdd = -0.25 * k; armOv = [lerp(1, 3.0, k), lerp(1, 3.0, k), lerp(0.5, 0.2, k)]; headUp = -0.3 * k; }
-      else if (e.bs === 'slamRecover') { leanAdd = 0.75; armOv = [0.55, 0.55, 0.3]; }
-    }
-    const bounce = Math.abs(Math.sin(ph)) * 0.07 * sp;
-    const hipY = 0.9 - 0.06 * sp + bounce;
-    const lean = T.lean + 0.22 * sp + e.flinch + (e.attackT >= 0 ? 0.2 : 0) + leanAdd;
-    const twist = e.twist + Math.sin(ph) * 0.12 * sp;
-    const pelvis = new THREE.Vector3(0, hipY, 0);
-    const ct = Math.cos(twist), st = Math.sin(twist);
-    const chest = pelvis.clone().add(new THREE.Vector3(Math.sin(twist) * 0.02, Math.cos(lean) * LEN.torso, Math.sin(lean) * LEN.torso));
-    const hl = lean * 0.4 + e.headSnap + headUp;
-    const head = chest.clone().add(new THREE.Vector3(Math.sin(e.headSnap * 0.5) * 0.05, Math.cos(hl) * LEN.head, Math.sin(hl) * LEN.head + 0.02));
-    const side = (sx) => new THREE.Vector3(sx * ct * 0.2, -0.05, -sx * st * 0.2);
-    const lSh = chest.clone().add(side(-1)), rSh = chest.clone().add(side(1));
-    const dirA = (a, out = new THREE.Vector3(), splay = 0) => out.set(splay, -Math.cos(a), Math.sin(a));
-    // arms: clawing reach forward, alternating with the gait; attack swings the right arm overhead and down
-    const reach = (1.0 + 0.25 * sp) * e.armHeight;
-    let la = reach + Math.sin(ph) * 0.45 * sp, ra = reach - Math.sin(ph) * 0.45 * sp, rBend = 0.5, lBend = 0.6;
-    if (e.attackT >= 0) {
-      const w = T.windup, t = e.attackT;
-      const k = t < w ? t / w : 1 - Math.min(1, (t - w) / 0.2);
-      ra = lerp(0.4, 2.9, Math.pow(k, 0.7)); rBend = lerp(0.3, 1.2, k);
-      la = lerp(la, 1.6, 0.5);
-    }
-    if (armOv) { la = armOv[0]; ra = armOv[1]; lBend = rBend = armOv[2]; }
-    const lEl = lSh.clone().addScaledVector(dirA(la, undefined, -0.15).normalize(), LEN.upper);
-    const lHa = lEl.clone().addScaledVector(dirA(la + lBend, undefined, 0.1).normalize(), LEN.fore);
-    const rEl = rSh.clone().addScaledVector(dirA(ra, undefined, 0.15).normalize(), LEN.upper);
-    const rHa = rEl.clone().addScaledVector(dirA(ra + rBend, undefined, -0.1).normalize(), LEN.fore);
-    // legs
-    const leg = (sx, off) => {
-      const hip = pelvis.clone().add(new THREE.Vector3(sx * 0.105, -0.03, 0));
-      const sw = Math.sin(ph + off) * 0.7 * sp;
-      const bend = (0.15 + 1.1 * Math.max(0, -Math.cos(ph + off))) * sp + 0.06;
-      const knee = hip.clone().addScaledVector(dirA(sw), LEN.thigh);
-      const foot = knee.clone().addScaledVector(dirA(sw - bend), LEN.shin);
-      return [hip, knee, foot];
-    };
-    const [lHip, lKn, lFt] = leg(-1, 0), [rHip, rKn, rFt] = leg(1, Math.PI);
-    L.push(pelvis, chest, head, lSh, lEl, lHa, rSh, rEl, rHa, lHip, lKn, lFt, rHip, rKn, rFt);
-    const cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
-    for (let i = 0; i < NJ; i++) {
-      const v = L[i];
-      e.joints[i].set((v.x * cy + v.z * sy) * s + e.pos.x, v.y * s + e.pos.y, (-v.x * sy + v.z * cy) * s + e.pos.z);
-    }
-    void time;
-  }
   // legless: dragging itself along on its arms
   poseCrawl(e) {
     const s = e.scale, ph = e.phase, V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -958,7 +836,7 @@ export class Horde {
         j.x += vx; j.y += vy - 18 * h * h; j.z += vz;
       }
       for (let it = 0; it < 3; it++) {
-        for (const P of this.parts) this.constrain(e.joints[P.a], e.joints[P.b], P.len * s);
+        for (const P of this.parts) this.constrain(e.joints[P.a], e.joints[P.b], this.restLen(e, P.a, P.b));
         for (const [a, b] of BRACES) this.constrain(e.joints[a], e.joints[b], this.restLen(e, a, b));
       }
       for (let i = 0; i < NJ; i++) {
@@ -991,46 +869,68 @@ export class Horde {
     a.x += dx * k; a.y += dy * k; a.z += dz * k; b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
   }
 
-  syncInstances() {
-    const n = this.enemies.length;
-    for (let pi = 0; pi < this.parts.length; pi++) {
-      const P = this.parts[pi], mesh = P.mesh, bit = 1 << pi;
-      for (let i = 0; i < n; i++) {
-        const e = this.enemies[i];
-        if (e.lost & bit) { tmpM.makeScale(0, 0, 0); mesh.setMatrixAt(i, tmpM); continue; }
-        const A = e.joints[P.a], B = e.joints[P.b];
-        tY.copy(B).sub(A); const len = tY.length() || 1e-4; tY.divideScalar(len);
-        // side axis from shoulders keeps the torso/head facing correctly (also in ragdoll)
-        tX.copy(e.joints[J.rSh]).sub(e.joints[J.lSh]);
-        tZ.crossVectors(tX, tY);
-        if (tZ.lengthSq() < 1e-6) tZ.set(Math.sin(e.yaw), 0, Math.cos(e.yaw));
-        tZ.normalize(); tX.crossVectors(tY, tZ).normalize();
-        const s = e.scale, bulk = pi === 0 ? e.type.bulk || 1 : 1;
-        tmpM.makeBasis(tX.multiplyScalar(s * bulk), tY.multiplyScalar(s * (P.kind === 'head' ? 1 : len / (P.len * s))), tZ.multiplyScalar(s * bulk));
-        tmpM.setPosition(A);
-        mesh.setMatrixAt(i, tmpM);
-        const charge = e.charge >= 0 ? 1 + 2.5 * Math.min(1, e.charge / SPIT_CHARGE) : 1;
-        const bossGlow = e.type.boss && pi === 1 ? 1.5 : 1; // head weak point burns brighter
-        P.flash.array[i] = e.flash; P.diss.array[i] = e.dissolve * 1.05; P.hue.array[i] = e.type.hue || 0; P.wound.array[i] = e.wound[pi];
-        P.heat.array[i] = (e.dead ? e.heat * (1 + Math.min(e.deadT, 1.5) * 0.5) : e.heat * charge) * bossGlow;
-      }
-      // detached limbs share the same instanced meshes
-      let c = n;
-      for (const L of this.limbs) {
-        const k = L.segs.indexOf(pi); if (k < 0 || c >= MAXI) continue;
-        const A = L.pts[k], B = L.pts[k + 1];
-        tY.copy(B).sub(A); const len = tY.length() || 1e-4; tY.divideScalar(len);
-        tZ.crossVectors(L.side, tY); if (tZ.lengthSq() < 1e-6) tZ.set(0, 0, 1);
-        tZ.normalize(); tX.crossVectors(tY, tZ).normalize();
-        const s = L.scale;
-        tmpM.makeBasis(tX.multiplyScalar(s), tY.multiplyScalar(P.kind === 'head' ? s : len / P.len), tZ.multiplyScalar(s));
-        tmpM.setPosition(A); mesh.setMatrixAt(c, tmpM);
-        P.flash.array[c] = 0; P.diss.array[c] = L.dis * 1.05; P.hue.array[c] = L.hue; P.wound.array[c] = 0.85; P.heat.array[c] = L.heat * (1 + Math.min(L.t, 1.5) * 0.6);
-        c++;
-      }
-      mesh.count = c;
-      mesh.instanceMatrix.needsUpdate = true; P.flash.needsUpdate = P.diss.needsUpdate = P.heat.needsUpdate = P.hue.needsUpdate = P.wound.needsUpdate = true;
+  // ---------------------------------------------------------------- skinned rigs
+  // alive: pick + blend mocap clips from the brain state, then read the gameplay joints back
+  animate(e, dt) {
+    const R = e.rig, T = e.type;
+    if (e.crawl) { this.poseCrawl(e); if (!e.crawlRef) { e.crawlRef = true; this.crawlBase(e); } solveFromJoints(R, e.joints, e.ref); return; }
+    R.root.position.copy(e.pos); R.root.rotation.set(0, e.yaw, 0); R.root.scale.setScalar(e.scale);
+    const sp = e.speedNow / e.scale;
+    let clip = 'walk', ts = 1;
+    if (e.attackT >= 0) { clip = e.attackSide ? 'attack2' : 'attack'; ts = 2.0 / (T.windup + 0.35) * (T.boss ? 0.8 : 1); }
+    else if (e.charge >= 0) { clip = 'scream'; ts = 1.6; }
+    else if (T.boss && (e.bs === 'chargeWind')) { clip = 'scream'; ts = 1.4; }
+    else if (T.boss && e.bs === 'slamWind') { clip = 'attack2'; ts = 1.25; }
+    else if (T.boss && e.bs === 'stun') { clip = 'hit'; ts = 0.8; }
+    else if (T.boss && e.bs === 'slamRecover') { clip = 'idle'; ts = 1; }
+    else if (sp < 0.25) { clip = 'idle'; ts = 1; }
+    else if (sp > 2.6 && !T.brute) { clip = 'run'; ts = clamp(sp / 4.6, 0.7, 1.7); }
+    else { clip = 'walk'; ts = clamp(sp / 0.9, 0.6, T.brute ? 2.6 : 3.2); }
+    if (e.attackT >= 0 && e.anim !== clip) { e.attackSide = Math.random() < 0.5; clip = e.attackSide ? 'attack2' : 'attack'; }
+    const restart = (clip === 'attack' || clip === 'attack2' || clip === 'scream') && e.anim !== clip;
+    const a = play(R, clip, clip === 'idle' ? 0.35 : 0.18, ts, restart);
+    if (restart) a.time = clip === 'scream' ? 0.4 : 0.9; // skip the slow lead-in of the swipe
+    e.anim = clip;
+    R.mixer.update(dt);
+    // hit reactions layered on top of the clip: torso jerk, head snap, twist
+    const B = R.bones;
+    if (B.Spine) B.Spine.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), clamp(e.flinch, -0.9, 0.9) * 0.8));
+    if (B.Spine1) B.Spine1.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(0, 1, 0), clamp(e.twist, -0.8, 0.8)));
+    if (B.Head) B.Head.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), clamp(e.headSnap, -1, 1) * 0.9));
+    if (e.spitRecoil > 0 && B.Spine1) B.Spine1.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), 0.5 * e.spitRecoil));
+    for (let pi = 1; pi < 10; pi++) if (e.lost & (1 << pi)) B[PART_BONE[pi]].scale.setScalar(0.0001);
+    R.root.updateMatrixWorld(true);
+    readJoints(R, e.joints, e.scale);
+  }
+  // crawlers: reference pose = the bind pose mapped through the procedural crawl joints
+  crawlBase(e) {
+    const R = e.rig, saved = e.joints.map((j) => j.clone());
+    R.mixer.stopAllAction(); R.cur = null; e.anim = null;
+    for (const b of Object.values(R.bones)) { const r = R.rest[b.name]; b.quaternion.copy(r.q); b.position.copy(r.p); }
+    for (let pi = 1; pi < 10; pi++) if (e.lost & (1 << pi)) R.bones[PART_BONE[pi]].scale.setScalar(0.0001);
+    R.root.updateMatrixWorld(true);
+    readJoints(R, e.joints, e.scale);
+    captureRef(R, e.joints, e.ref);
+    for (let i = 0; i < saved.length; i++) e.joints[i].copy(saved[i]);
+  }
+  updateDeathClip(e, dt) {
+    e.deadT += dt;
+    if (e.deadT > (e.type.boss ? 5 : 3.2)) e.dissolve = Math.min(1, e.dissolve + dt / 1.3);
+    if (e.deadT > 6) return;
+    e.rig.mixer.update(dt);
+    e.rig.root.updateMatrixWorld(true);
+    readJoints(e.rig, e.joints, e.scale);
+    if (e.deadT > 1.4 && !e.pooled) { e.pooled = true; const c = e.joints[J.chest]; this.hooks.fx.bloodPool(c, e.scale, this.groundAt(c.x, c.z, c.y)); }
+  }
+  syncRigs() {
+    for (const e of this.enemies) {
+      const R = e.rig; if (!R) continue;
+      R.u.uFlash.value = e.flash; R.u.uDiss.value = e.dissolve * 1.05;
+      R.u.uGlow.value = e.charge >= 0 ? 1 + 3 * Math.min(1, e.charge / SPIT_CHARGE) : 0.6;
+      for (let i = 0; i < 10; i++) R.u.uWound.value[i] = e.wound[i];
+      // corpses stop casting shadows once they start rotting away
+      if (e.dead && e.dissolve > 0.3 && R.meshes[0].castShadow) for (const m of R.meshes) m.castShadow = false;
+      else if (!e.dead && !R.meshes[0].castShadow) for (const m of R.meshes) m.castShadow = true;
     }
-    void tS;
   }
 }
