@@ -213,7 +213,7 @@ export function makeLimb(R, src, partIdx, joints, chain) {
   R.root.attach(top);
   top.scale.setScalar(1);
   R.bones.Hips.scale.setScalar(0.0001);
-  R.limbNames = LIMB_BONES[partIdx].filter((n) => n !== 'LeftHand' && n !== 'RightHand' && !/Foot|Toe/.test(n));
+  R.limbNames = LIMB_BONES[partIdx].filter((n) => n !== 'LeftHand' && n !== 'RightHand' && !/Foot|Toe/.test(n)).slice(0, chain.length - 1); // lower half may already be gone
   R.limbRef = R.limbNames.map((n, k) => ({ n, q: R.bones[n].getWorldQuaternion(new THREE.Quaternion()), d: chain[k + 1].clone().sub(chain[k]).normalize() }));
   for (let i = 0; i < R.mats.length; i++) Object.assign(R.u.uWound.value, src.u.uWound.value);
   R.u.uTint.value.copy(src.u.uTint.value); R.u.uHue.value = src.u.uHue.value;

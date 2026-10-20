@@ -7,7 +7,7 @@ want = lambda n: only is None or n in only
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])
     pg = b.new_page(viewport={'width': 1280, 'height': 720}); errs = []
-    pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.on('pageerror', lambda e: errs.append(str(e) + ' @ ' + (e.stack or '')[:600]))
     pg.on('console', lambda m: errs.append(m.text) if m.type == 'error' else None)
     pg.goto(url); pg.wait_for_function('window.__ready === true', timeout=180000)
     ev = pg.evaluate
@@ -30,5 +30,23 @@ with sync_playwright() as p:
         gt(3.2)
         print('after ready', ev("JSON.stringify({s: game.state, wave: game.horde.wave, left: game.horde.remaining()})"))
         gt(0.6); shot('hud')
+    if want('boom'):
+        ev("game.horde.running = false; game.horde.reset(); game.barrels.respawn(); __debug.give('mr')"); gt(0.8)
+        print('barrels', ev("JSON.stringify(__debug.barrels())"))
+        # pack of husks around the drum cluster by the containers
+        ev("""(() => { const V = game.player.pos.constructor; const pts = [[-14.9,-11.4],[-11.9,-12.2],[-13.4,-12.6],[-11.4,-9.2],[-15.6,-10.2],[-12.6,-13.8],[-14.6,-13.4],[-10.6,-12.6]];
+          for (const [x,z] of pts) { const e = game.horde.spawn('runner', new V(x, 0, z), true); e.aware = true; e.speed = 0.01; e.attackCd = 99; } })()""")
+        ev("__debug.teleport(-5.5, 0, -6.5)")
+        ev("""(() => { const b = game.barrels.list[0].pos, p = game.player.pos; const dx = b.x - p.x, dz = b.z - p.z, dy = 0.45 - (p.y + 1.65);
+          __debug.look(Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))); })()""")
+        gt(0.8); shot('boom-before')
+        ev("__debug.set({left:true, leftPressed:true})"); gt(0.06); ev("__debug.set({left:false, leftPressed:false})")
+        ev("__debug.look(game.player.yaw, game.player.pitch + 0.12)")
+        gt(0.1); shot('boom-0')
+        gt(0.18); shot('boom-1')
+        gt(0.45); shot('boom-2')
+        gt(1.4); shot('boom-3')
+        print('after', ev("JSON.stringify({alive: game.horde.aliveCount(), dead: game.horde.enemies.filter(e=>e.dead).length, lost: game.horde.enemies.map(e=>e.lost).join(','), barrels: __debug.barrels().filter(b=>!b.alive).length, kills: game.kills, hp: game.player.health})"))
+        ev("game.barrels.respawn(game.player.pos)"); print('respawned', sum(1 for b in json.loads(ev("JSON.stringify(__debug.barrels())")) if b['alive']))
     print('ERRORS:', errs[:8])
     b.close()

@@ -141,6 +141,16 @@ export class Audio {
       case 'buy': this.tone({ dur: 0.08, type: 'triangle', freq: 880, gain: 0.12 }); this.tone({ t: 0.07, dur: 0.18, type: 'triangle', freq: 1320, gain: 0.12, send: 0.3 }); this.burst({ dur: 0.05, type: 'highpass', freq: 5000, gain: 0.15 }); break;
       case 'perk': [392, 523, 659, 1046].forEach((f, i) => this.tone({ t: i * 0.06, dur: 0.5, type: 'triangle', freq: f, gain: 0.09, send: 0.6 })); this.burst({ dur: 0.6, type: 'bandpass', freq: 3000, q: 1, gain: 0.12, attack: 0.05, freqEnd: 6000, send: 0.5 }); break;
       case 'shopOpen': this.burst({ dur: 0.5, type: 'lowpass', freq: 300, gain: 0.5, freqEnd: 1200 }); this.tone({ dur: 0.6, type: 'sine', freq: 110, freqEnd: 220, gain: 0.25, send: 0.4 }); break;
+      case 'explosion': {
+        const g = o.gain ?? 1, k = o.k ?? 1;
+        this.burst({ dur: 0.07, type: 'highpass', freq: 1600, gain: 1.1 * g, rate: 0.8 });
+        this.burst({ dur: 1.4 * k + 0.3, type: 'lowpass', freq: 1100, gain: 1.7 * g, freqEnd: 90, send: 0.8 });
+        this.tone({ dur: 0.9 * k + 0.2, type: 'sine', freq: 80, freqEnd: 26, gain: 1.4 * g });
+        this.tone({ dur: 0.25, type: 'triangle', freq: 160, freqEnd: 50, gain: 0.6 * g });
+        this.burst({ t: 0.04, dur: 2.4 * k, type: 'lowpass', freq: 420, gain: 0.7 * g, attack: 0.05, freqEnd: 70, send: 0.9 });
+        if (k > 0.7) for (let i = 0; i < 7; i++) this.burst({ t: 0.3 + Math.random() * 1.1, dur: 0.05, type: 'bandpass', freq: r(1400, 4200), q: 3, gain: 0.14 * g });
+        break;
+      }
       case 'click': this.tone({ dur: 0.04, type: 'square', freq: 900, gain: 0.04 }); break;
     }
   }

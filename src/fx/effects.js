@@ -127,23 +127,23 @@ class Decals {
 
 // ---------- gibs: pooled meaty chunks with simple rigid-ish physics ----------
 class Gibs {
-  constructor(scene, max = 64) {
-    this.max = max; this.items = [];
+  constructor(scene, max = 64, opts = {}) {
+    this.max = max; this.items = []; this.decal = opts.decal ?? true;
     const g = new THREE.IcosahedronGeometry(1, 1);
     const p = g.attributes.position; // lumpy
     for (let i = 0; i < p.count; i++) { const k = 0.7 + Math.random() * 0.5; p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.8, p.getZ(i) * k); }
     g.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color: '#7a0c0c', roughness: 0.35, metalness: 0.05, emissive: '#1a0000' });
-    this.mesh = new THREE.InstancedMesh(g, mat, max);
+    const mat = opts.material || new THREE.MeshStandardMaterial({ color: '#7a0c0c', roughness: 0.35, metalness: 0.05, emissive: '#1a0000' });
+    this.mesh = new THREE.InstancedMesh(opts.geometry || g, mat, max);
     this.mesh.count = 0; this.mesh.castShadow = true; this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.colors = [new THREE.Color('#ffffff'), new THREE.Color('#c9b0a0'), new THREE.Color('#5a3a30')];
+    this.colors = opts.colors || [new THREE.Color('#ffffff'), new THREE.Color('#c9b0a0'), new THREE.Color('#5a3a30')];
     scene.add(this.mesh);
     this.o = new THREE.Object3D();
   }
   spawn(pos, vel, size, ground) {
     if (this.items.length >= this.max) this.items.shift();
-    this.items.push({ pos: pos.clone(), vel, rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), spin: new THREE.Vector3(rand(-12, 12), rand(-12, 12), rand(-12, 12)), size, t: 0, ground, landed: false, col: Math.random() < 0.2 ? 1 : 0 });
+    this.items.push({ pos: pos.clone(), vel, rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), spin: new THREE.Vector3(rand(-12, 12), rand(-12, 12), rand(-12, 12)), size, t: 0, ground, landed: false, col: this.decal ? (Math.random() < 0.2 ? 1 : 0) : Math.floor(Math.random() * this.colors.length) % this.colors.length, sx: rand(0.6, 1.6), sz: rand(0.15, 1) });
   }
   update(dt, fx) {
     this.items = this.items.filter((g) => g.t < 9);
@@ -155,13 +155,13 @@ class Gibs {
         const floor = g.ground + g.size * 0.6;
         if (g.pos.y < floor) {
           g.pos.y = floor;
-          if (!g.landed) { g.landed = true; fx.blood.add(new THREE.Vector3(g.pos.x, g.ground + 0.012, g.pos.z), new THREE.Vector3(0, 1, 0), g.size * rand(5, 8), new THREE.Vector3(g.vel.x, 0, g.vel.z), 1.6); }
+          if (!g.landed) { g.landed = true; if (this.decal) fx.blood.add(new THREE.Vector3(g.pos.x, g.ground + 0.012, g.pos.z), new THREE.Vector3(0, 1, 0), g.size * rand(5, 8), new THREE.Vector3(g.vel.x, 0, g.vel.z), 1.6); }
           g.vel.y *= -0.25; g.vel.x *= 0.55; g.vel.z *= 0.55; g.spin.multiplyScalar(0.5);
           if (Math.abs(g.vel.y) < 0.4 && Math.hypot(g.vel.x, g.vel.z) < 0.3) g.rest = true;
         }
       }
       const shrink = g.t > 7.5 ? 1 - (g.t - 7.5) / 1.5 : 1;
-      this.o.position.copy(g.pos); this.o.rotation.copy(g.rot); this.o.scale.setScalar(g.size * shrink);
+      this.o.position.copy(g.pos); this.o.rotation.copy(g.rot); this.o.scale.set(g.size * shrink * (this.decal ? 1 : g.sx), g.size * shrink * (this.decal ? 1 : 0.18), g.size * shrink * (this.decal ? 1 : g.sz));
       this.o.updateMatrix(); this.mesh.setMatrixAt(i, this.o.matrix); this.mesh.setColorAt(i, this.colors[g.col]);
     });
     this.mesh.count = this.items.length;
@@ -218,6 +218,18 @@ class Tracers {
   }
 }
 
+function scorchTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+  const g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(8,6,5,.95)'); g.addColorStop(0.35, 'rgba(14,10,8,.85)'); g.addColorStop(0.7, 'rgba(20,14,10,.4)'); g.addColorStop(1, 'rgba(20,14,10,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  x.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 160; i++) { const a = Math.random() * 6.28, r = 40 + Math.random() * 90; x.fillStyle = `rgba(0,0,0,${Math.random() * 0.5})`; x.beginPath(); x.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 3 + Math.random() * 14, 0, 6.28); x.fill(); }
+  x.globalCompositeOperation = 'source-over'; x.strokeStyle = 'rgba(5,4,3,.7)'; x.lineCap = 'round';
+  for (let i = 0; i < 28; i++) { const a = Math.random() * 6.28, r0 = 30 + Math.random() * 20, r1 = 80 + Math.random() * 45; x.lineWidth = 2 + Math.random() * 5; x.beginPath(); x.moveTo(128 + Math.cos(a) * r0, 128 + Math.sin(a) * r0); x.lineTo(128 + Math.cos(a) * r1, 128 + Math.sin(a) * r1); x.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
 export class Effects {
   constructor(scene, quality) {
     this.scene = scene;
@@ -235,8 +247,14 @@ export class Effects {
     this.acid = new Decals(scene, 24, bloodTexture(), { roughness: 0.2, atlas: true });
     this.acid.mesh.material.color.set('#7dff4a'); this.acid.mesh.material.emissive = new THREE.Color(0.25, 1.0, 0.1); this.acid.mesh.material.emissiveIntensity = 1.4;
     this.acid.mesh.material.emissiveMap = this.acid.mesh.material.map;
+    // explosions: metal debris, scorch marks, flash lights, lingering fires
+    const shard = new THREE.BoxGeometry(1, 1, 1);
+    this.debris = new Gibs(scene, 60, { decal: false, geometry: shard, material: new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.6, roughness: 0.55 }), colors: [new THREE.Color('#7e1a12'), new THREE.Color('#3a3634'), new THREE.Color('#5a1410'), new THREE.Color('#b08a20')] });
+    this.scorch = new Decals(scene, 28, scorchTexture(), { roughness: 0.95 });
+    this.boomLights = [0, 1, 2].map(() => { const L = new THREE.PointLight('#ff9a40', 0, 22, 1.6); scene.add(L); return { L, t: 1, k: 1 }; });
+    this.burns = []; this.timers = [];
     // shockwave rings (pooled)
-    this.waves = [0, 1].map(() => {
+    this.waves = [0, 1, 2, 3].map(() => {
       const m = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 64, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.3, 0.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
       m.visible = false; m.frustumCulled = false; scene.add(m);
       return { mesh: m, t: 1, r: 8 };
@@ -370,20 +388,69 @@ export class Effects {
     }
     for (let i = 0; i < 30; i++) this.add.spawn({ pos: point.clone().setY(point.y + 0.2), vel: new THREE.Vector3(rand(-6, 6), rand(2, 8), rand(-6, 6)), life: rand(0.3, 0.8), size: rand(0.015, 0.03), col: new THREE.Color(5, 1.8, 0.4), grav: 12, kind: 1, floor: 0.02 });
     const w = this.waves.find((x) => x.t >= 1) || this.waves[0];
-    w.t = 0; w.r = radius; w.mesh.position.copy(point).setY(point.y + 0.06); w.mesh.visible = true;
+    w.t = 0; w.r = radius; w.op = 0.9; w.dur = 0.55; w.mesh.position.copy(point).setY(point.y + 0.06); w.mesh.visible = true;
   }
+  // fireball + flash + sparks + smoke + debris + shock ring + scorch; k scales everything (1 = fuel drum)
+  explosion(p, k = 1, ground = 0) {
+    const C = (r, g, b) => new THREE.Color(r, g, b);
+    this.add.spawn({ pos: p.clone().setY(p.y + 0.3 * k), life: 0.08, size: 3.4 * k, col: C(4, 2.6, 1.2) });
+    // white-hot core (additive, short) inside a billowing orange fireball (alpha-blended so it keeps its colour)
+    for (let i = 0; i < Math.round(8 * k + 3); i++) {
+      const d = new THREE.Vector3(rand(-1, 1), rand(0, 1), rand(-1, 1)).normalize();
+      this.add.spawn({ pos: p.clone().addScaledVector(d, rand(0, 0.3) * k), vel: d.multiplyScalar(rand(1.5, 4) * k), life: rand(0.18, 0.32), size: rand(0.4, 0.7) * k, grow: 1.1 * k, col: C(2.6, 1.2, 0.35), drag: 4 });
+    }
+    for (let i = 0; i < Math.round(22 * k + 5); i++) {
+      const d = new THREE.Vector3(rand(-1, 1), rand(-0.1, 1), rand(-1, 1)).normalize();
+      const hot = Math.random();
+      this.alpha.spawn({ pos: p.clone().addScaledVector(d, rand(0.1, 0.5) * k), vel: d.multiplyScalar(rand(2, 6.5) * k).add(new THREE.Vector3(0, 1.8 * k, 0)), life: rand(0.35, 0.75), size: rand(0.45, 0.85) * k, grow: rand(1.3, 2.2) * k, col: hot < 0.4 ? C(3.2, 1.7, 0.5) : hot < 0.8 ? C(2.4, 0.8, 0.16) : C(1.3, 0.3, 0.06), alpha: 0.9, drag: 3.4, grav: -2.2 });
+    }
+    for (let i = 0; i < Math.round(40 * k + 8); i++) {
+      const v = new THREE.Vector3(rand(-1, 1), rand(0.1, 1.2), rand(-1, 1)).normalize().multiplyScalar(rand(8, 20) * Math.sqrt(k));
+      this.add.spawn({ pos: p, vel: v, life: rand(0.3, 1.0), size: rand(0.02, 0.04), col: C(5, rand(2, 3.2), 0.7), grav: 12, drag: 0.6, kind: 1, floor: ground + 0.02 });
+    }
+    // thick smoke rolls up as the fire dies (spawned a beat later, inside the fireball)
+    this.later(0.12, () => {
+      for (let i = 0; i < Math.round(24 * k + 4); i++) {
+        const g = rand(0.1, 0.17);
+        this.alpha.spawn({ pos: p.clone().add(new THREE.Vector3(rand(-0.9, 0.9), rand(0.2, 1.8), rand(-0.9, 0.9)).multiplyScalar(k)), vel: new THREE.Vector3(rand(-1.2, 1.2), rand(1.2, 3.0), rand(-1.2, 1.2)).multiplyScalar(k), life: rand(2.4, 4), size: rand(1.1, 1.7) * k, grow: rand(3, 4.5) * k, col: C(g, g * 0.88, g * 0.8), alpha: 0.85, drag: 1.3, grav: -0.8 });
+      }
+    });
+    // ground dust ring
+    for (let i = 0; i < Math.round(22 * k); i++) {
+      const a = (i / (22 * k)) * Math.PI * 2, sp = rand(5, 9) * k;
+      this.alpha.spawn({ pos: new THREE.Vector3(p.x + Math.cos(a) * 0.5, ground + 0.25, p.z + Math.sin(a) * 0.5), vel: new THREE.Vector3(Math.cos(a) * sp, rand(0.2, 1), Math.sin(a) * sp), life: rand(0.6, 1.2), size: rand(0.4, 0.8) * k, grow: 1.6 * k, col: C(0.36, 0.3, 0.27), alpha: 0.45, drag: 3, grav: -0.2 });
+    }
+    if (k >= 0.8) for (let i = 0; i < 14; i++) {
+      const v = new THREE.Vector3(rand(-1, 1), rand(0.6, 1.6), rand(-1, 1)).normalize().multiplyScalar(rand(5, 13));
+      this.debris.spawn(p.clone().add(new THREE.Vector3(rand(-0.25, 0.25), rand(-0.2, 0.3), rand(-0.25, 0.25))), v, rand(0.08, 0.2), ground);
+    }
+    const w = this.waves.find((x) => x.t >= 1) || this.waves[0];
+    w.t = 0; w.r = 7 * k; w.op = 0.32; w.dur = 0.4; w.mesh.position.set(p.x, ground + 0.08, p.z); w.mesh.visible = true;
+    const L = this.boomLights.find((x) => x.t >= 1) || this.boomLights[0];
+    L.t = 0; L.k = k; L.L.position.set(p.x, p.y + 1.2, p.z);
+    this.scorch.add(new THREE.Vector3(p.x, ground + 0.014 + Math.random() * 0.003, p.z), new THREE.Vector3(0, 1, 0), rand(2.6, 3.4) * k);
+    if (k >= 0.8) this.burns.push({ p: new THREE.Vector3(p.x, ground, p.z), t: rand(3, 4.5) });
+  }
+  later(t, fn) { this.timers.push({ t, fn }); }
   bloodPool(pos, size = 1, y = 0) { this.blood.add(new THREE.Vector3(pos.x, y + 0.012 + Math.random() * 0.004, pos.z), new THREE.Vector3(0, 1, 0), rand(0.9, 1.6) * size); }
 
   update(dt, camera, time) {
-    this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera); this.gibs.update(dt, this);
+    this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera); this.gibs.update(dt, this); this.debris.update(dt, this);
+    for (const B of this.boomLights) { if (B.t >= 1) { B.L.intensity = 0; continue; } B.t = Math.min(1, B.t + dt / 0.7); B.L.intensity = 110 * B.k * Math.pow(1 - B.t, 2.2); }
+    this.burns = this.burns.filter((b) => (b.t -= dt) > 0);
+    if (this.timers.length) { const due = this.timers.filter((x) => (x.t -= dt) <= 0); this.timers = this.timers.filter((x) => x.t > 0); due.forEach((x) => x.fn()); }
+    for (const b of this.burns) {
+      if (Math.random() < 0.8) this.add.spawn({ pos: new THREE.Vector3(b.p.x + rand(-0.6, 0.6), b.p.y + 0.05, b.p.z + rand(-0.6, 0.6)), vel: new THREE.Vector3(rand(-0.2, 0.2), rand(2, 3.6), rand(-0.2, 0.2)), life: rand(0.25, 0.5), size: rand(0.1, 0.18) * Math.min(1, b.t), col: new THREE.Color(3.4, 1.2, 0.25), kind: 1, drag: 1 });
+      if (Math.random() < 0.15) this.alpha.spawn({ pos: new THREE.Vector3(b.p.x + rand(-0.3, 0.3), b.p.y + 0.8, b.p.z + rand(-0.3, 0.3)), vel: new THREE.Vector3(rand(-0.2, 0.2), rand(1, 1.8), rand(-0.2, 0.2)), life: rand(1.5, 2.5), size: 0.4, grow: 1.6, col: new THREE.Color(0.08, 0.07, 0.065), alpha: 0.4, drag: 1, grav: -0.5 });
+    }
     this.muzzleLight.intensity = Math.max(0, this.flashT / 0.05) * 30; this.flashT -= dt;
     this.embers.material.uniforms.time.value = time;
     for (const w of this.waves) {
       if (w.t >= 1) { w.mesh.visible = false; continue; }
-      w.t = Math.min(1, w.t + dt / 0.55);
+      w.t = Math.min(1, w.t + dt / (w.dur || 0.55));
       const k = 1 - Math.pow(1 - w.t, 2.2);
-      w.mesh.scale.setScalar(0.5 + k * w.r); w.mesh.material.opacity = (1 - w.t) * 0.9;
+      w.mesh.scale.setScalar(0.5 + k * w.r); w.mesh.material.opacity = (1 - w.t) * (1 - w.t) * (w.op ?? 0.9);
     }
   }
-  clear() { this.holes.clear(); this.blood.clear(); this.splat.clear(); this.gibs.clear(); this.acid.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
+  clear() { this.holes.clear(); this.blood.clear(); this.splat.clear(); this.gibs.clear(); this.debris.clear(); this.scorch.clear(); this.burns.length = 0; this.acid.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
 }

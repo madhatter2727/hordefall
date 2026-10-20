@@ -3,6 +3,7 @@ import './style.css';
 import { Input } from './core/input.js';
 import { clamp, lerp, damp, rand, rayAABB } from './core/util.js';
 import { buildArena } from './world/arena.js';
+import { Barrels } from './world/barrels.js';
 import { makeSky, SUN_DIR } from './world/sky.js';
 import { Player } from './player.js';
 import { Arsenal } from './weapons/arsenal.js';
@@ -67,6 +68,7 @@ class Game {
     this.vmLocal = new THREE.PointLight('#ff8a3a', 0, 4, 2); this.vmScene.add(this.vmLocal);
 
     this.arena = buildArena(scene, this.quality, assets);
+    this.barrels = new Barrels(scene, this.arena, assets); // adds its colliders before anyone copies the list
     this.player = new Player(this.arena.colliders);
     this.fx = new Effects(scene, this.quality);
     this.audio = new Audio();
@@ -180,7 +182,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow();
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn();
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -200,6 +202,24 @@ class Game {
   }
   shake(a) { this.trauma = Math.min(1, this.trauma + a); }
 
+  // ------------------------------------------------------------ explosions (fuel drums, explosive rounds)
+  explode(p, k = 1, opts = {}) {
+    const g = this.horde.groundAt(p.x, p.z, p.y);
+    this.fx.explosion(p, k, g);
+    const eye = this.camera.position, d = eye.distanceTo(p);
+    this.audio.play('explosion', { k, gain: clamp(16 / (d + 5), 0.25, 1) });
+    const R = opts.radius ?? 6.5 * k;
+    const kills = this.horde.blast(p, R, opts.dmg ?? 260 * k);
+    if (kills >= 3) this.feed(`<b>${kills}× MULTI-KILL</b>`, 50 * kills), this.addScore(50 * kills);
+    for (const b of this.barrels.near(p, 4.6 * Math.max(k, 0.6))) this.barrels.damage(b, 999, 0.1 + b.pos.distanceTo(p) * 0.05);
+    const P = this.player, pd = P.pos.clone().setY(P.pos.y + 0.9).distanceTo(p);
+    if (!opts.noSelf && pd < R && P.alive) {
+      const f = 1 - pd / R;
+      this.onPlayerHit(Math.round(70 * f * f + 8 * f), p, null, { knock: 9 * f, blast: true });
+    }
+    this.shake(clamp(1.15 * k * (1 - d / 30), 0.05, 1));
+    if (d < 14 && k >= 0.8) this.hitstop = Math.max(this.hitstop, 0.06);
+  }
   // ------------------------------------------------------------ points, perks, intermission shop
   addScore(n, kill = false) {
     this.score += n; this.pts += Math.round(kill ? n * this.ptsMul : n); this.hudDirty = true;
@@ -218,6 +238,7 @@ class Game {
   onWaveEnd(n) {
     this.banner(`WAVE ${n} CLEARED`, `+${250 * n} · Intermission`);
     this.audio.play('waveEnd'); this.addScore(250 * n);
+    this.barrels.respawn(this.player.pos);
     this.onWaveCleared?.(n);
     this.shopT = 2.6; // let the banner land, then open the shop
   }
@@ -307,7 +328,7 @@ class Game {
     return hit ? { t: best, c: hit } : null;
   }
   shoot(origin, dir, def, first) {
-    if (first) { this.vmToWorld(this.arsenal.muzzleWorld(), this.muzzleNow); this.shotsFired++; this.splatsThisShot = 0; }
+    if (first) { this.vmToWorld(this.arsenal.muzzleWorld(), this.muzzleNow); this.shotsFired++; this.splatsThisShot = 0; this.boomThisShot = false; }
     this.pelletMode = def.pellets > 1;
     if (first) this.pelletSounded = false;
     const n = this.tmpN;
@@ -327,8 +348,12 @@ class Game {
       hitAny = true;
       if (pierce-- <= 0) { endT = h.t; break; }
     }
+    if (hitAny && def.explosive && first !== null && !this.boomThisShot && Math.random() < 0.1 * def.explosive) {
+      this.boomThisShot = true; this.explode(origin.clone().addScaledVector(dir, Math.min(endT, hits[0].t)), 0.42, { noSelf: true, dmg: 75, radius: 2.8 });
+    }
     if (endT === wallT && wh) {
       const p = origin.clone().addScaledVector(dir, wallT);
+      if (wh.c.barrel) { const fall = clamp((wallT - def.falloffStart) / (def.falloffEnd - def.falloffStart), 0, 1); this.barrels.damage(wh.c.barrel, lerp(def.damage, def.damageMin, fall)); }
       this.fx.impact(p, n.clone(), wh.c.mat);
       if (Math.random() < (def.pellets > 1 ? 0.25 : 1)) {
         const dist = p.distanceTo(this.player.pos);
@@ -450,7 +475,7 @@ class Game {
     // knockback from brutes
     const away = this.player.pos.clone().sub(from); away.y = 0; away.normalize();
     this.player.vel.addScaledVector(away, opts.knock ?? (e.type.brute ? 9 : 2.5));
-    if (e.type.brute || opts.knock) this.player.vel.y = Math.max(this.player.vel.y, opts.knock ? 4.5 : 3);
+    if (e?.type.brute || opts.knock) this.player.vel.y = Math.max(this.player.vel.y, opts.knock ? 4.5 : 3);
     // directional indicator
     const ang = Math.atan2(away.x, away.z) - this.player.yaw;
     const di = $('dmgdir'); di.style.transform = `translate(-50%,-50%) rotate(${-ang + Math.PI}rad)`;
@@ -515,6 +540,7 @@ class Game {
 
     if (active) {
       this.horde.update(worldDt, this.time, this.camera);
+      this.barrels.update(worldDt, this.fx, (p) => this.explode(p, 1));
       this.fx.update(worldDt, this.camera, this.time);
     }
     // lights
@@ -633,6 +659,8 @@ window.__debug = {
   select(i) { game.arsenal.select(i); },
   give(id) { return game.arsenal.give(id); },
   pts(n) { game.pts = n; game.hudDirty = true; },
+  barrels() { return game.barrels.list.map((b) => ({ x: b.pos.x, z: b.pos.z, alive: b.alive })); },
+  boom(i) { const b = game.barrels.list[i]; game.barrels.damage(b, 999); },
   clearWave() { const H = game.horde; H.toSpawn = 0; H.bossDelay = 0; for (const e of H.enemies) if (!e.dead) { e.hp = 0; H.kill(e, e.pos.clone(), new THREE.Vector3(0, 0, 1), 50, { id: 'ar' }, false); } },
   info() { const A = game.arsenal; return { state: game.state, weapon: A.def.id, mag: A.current.mag, ads: A.ads, fps: game.fps, cpuMs: game.cpuMs, hp: game.player.health, wave: game.horde.wave, alive: game.horde.aliveCount(), idle: game.horde.enemies.filter((e) => !e.dead && !e.aware).length, kills: game.kills, pos: game.player.pos.toArray() }; },
   spawn(n, dist, idle, type, ang) { return game.horde.debugSpawn(n, dist, idle, type ?? null, ang ?? null).length; },

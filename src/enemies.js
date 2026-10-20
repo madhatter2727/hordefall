@@ -385,6 +385,30 @@ export class Horde {
     }
     return { killed: false, weak, armor };
   }
+  // explosion: falloff damage, limbs torn off up close, corpses thrown. Returns kills.
+  blast(p, radius, maxDmg) {
+    const def = { id: 'boom', knock: 9 }, h = 1 / 120;
+    let kills = 0;
+    for (const e of this.enemies) {
+      const c = e.joints[J.chest], d = c.distanceTo(p), R = radius + 0.3 * e.scale;
+      if (d > R) continue;
+      const f = clamp(1 - d / R, 0, 1);
+      const dir = c.clone().sub(p); dir.y = Math.max(0, dir.y) + 0.7 + f * 0.6; dir.normalize();
+      if (e.dead) { // fling fresh corpses
+        if (e.ragdoll && e.deadT < 2.5) for (let i = 0; i < NJ; i++) e.prev[i].addScaledVector(dir, -h * 5 * f / Math.sqrt(e.type.mass));
+        continue;
+      }
+      const res = this.damage(e, maxDmg * (0.3 + 0.7 * f), 'body', c.clone(), dir, def, 0);
+      if (res.killed) kills++;
+      if (e.type.sever && (res.killed || f > 0.55)) {
+        const opts = [2, 4, 6, 8, 3, 5, 7, 9, 1].sort(() => Math.random() - 0.5), n = f > 0.65 ? 2 + Math.floor(Math.random() * 2) : f > 0.35 ? 1 : 0;
+        for (let k = 0; k < n; k++) this.sever(e, opts[k], dir);
+        if (res.killed && f > 0.5) this.hooks.fx.gib(c.clone(), dir, 8, this.groundAt(c.x, c.z, c.y));
+      }
+      e.stagger = Math.max(e.stagger, 0.9 * f);
+    }
+    return kills;
+  }
   sever(e, pi, dir) {
     const idxs = (SEVER_GROUP[pi] || [pi]).filter((i) => !(e.lost & (1 << i)));
     if (!idxs.length) return;
@@ -445,8 +469,8 @@ export class Horde {
     // ragdoll: previous positions encode velocity (motion + shot impulse, strongest near the hit)
     const h = 1 / 120;
     const v = e.vel.clone().add(e.kb);
-    const push = dir.clone().multiplyScalar(clamp(amount / 22, 1.5, def.id === 'sg' ? 9 : 6) / Math.sqrt(e.type.mass));
-    push.y += 1.2;
+    const push = dir.clone().multiplyScalar(clamp(amount / 22, 1.5, def.id === 'sg' ? 9 : def.id === 'boom' ? 7.5 : 6) / Math.sqrt(e.type.mass));
+    push.y += def.id === 'boom' ? 2.6 : 1.2;
     for (let i = 0; i < NJ; i++) {
       const j = e.joints[i];
       const w = Math.exp(-j.distanceTo(point) * 2.2);
