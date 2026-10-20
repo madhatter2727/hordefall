@@ -8,7 +8,7 @@ const POSES = {
   ar: { hip: new THREE.Vector3(0.105, -0.088, -0.3), hipRot: new THREE.Euler(0.0, 0.04, 0.03), ads: new THREE.Vector3(0, 0, -0.17) },
   sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
   mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.245) },
-  smg: { hip: new THREE.Vector3(0.1, -0.086, -0.3), hipRot: new THREE.Euler(0.0, 0.045, 0.03), ads: new THREE.Vector3(0, 0, -0.2) },
+  smg: { hip: new THREE.Vector3(0.1, -0.086, -0.3), hipRot: new THREE.Euler(0.0, 0.045, 0.03), ads: new THREE.Vector3(0, 0, -0.27) },
   lmg: { hip: new THREE.Vector3(0.118, -0.1, -0.33), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.19) },
   rv: { hip: new THREE.Vector3(0.105, -0.1, -0.4), hipRot: new THREE.Euler(0.02, 0.07, 0.04), ads: new THREE.Vector3(0, 0, -0.42) },
 };

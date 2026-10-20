@@ -24,6 +24,7 @@ const QUALITY = {
   high: { pr: Math.min(devicePixelRatio, 1.5), shadow: 2048 },
 };
 const $ = (id) => document.getElementById(id);
+const fmtTime = (t) => { t = Math.max(0, Math.round(t)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 
 class Game {
   constructor(assets) {
@@ -131,6 +132,11 @@ class Game {
     $('deploy').onclick = () => this.start();
     $('resume').onclick = () => { this.input.lock(); };
     $('restart').onclick = () => this.restart();
+    $('d-entry').onsubmit = (e) => this.saveScore(e);
+    $('d-name').value = localStorage.getItem('hf-name') || '';
+    $('d-name').oninput = (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+    $('lb-local').onclick = () => { this.lbTab = 'local'; this.renderBoard(); };
+    $('lb-global').onclick = () => { this.lbTab = 'global'; this.renderBoard(); if (!this.global) this.fetchGlobal().then(() => this.renderBoard()); };
     $('restart2').onclick = () => this.restart();
     document.querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => this.applyQuality(b.dataset.q)));
     const sens = $('sens'); sens.value = this.input.sensitivity;
@@ -500,10 +506,66 @@ class Game {
   onDeath() {
     this.state = 'dead'; this.deadT = 0;
     const best = Math.max(+localStorage.getItem('hf-best') || 0, this.score); localStorage.setItem('hf-best', best);
+    const acc = this.shotsFired ? Math.round((this.shotsHit / this.shotsFired) * 100) : 0;
+    this.run = { score: this.score, wave: this.horde.wave, kills: this.kills, heads: this.headshots, acc, time: Math.round(this.runTime), saved: false };
     $('d-wave').textContent = this.horde.wave; $('d-kills').textContent = this.kills; $('d-heads').textContent = this.headshots;
-    $('d-score').textContent = this.score; $('d-best').textContent = best;
-    $('d-acc').textContent = this.shotsFired ? Math.round((this.shotsHit / this.shotsFired) * 100) + '%' : '—';
-    setTimeout(() => { if (this.state === 'dead') { document.exitPointerLock?.(); this.show('dead'); } }, 1600);
+    $('d-score').textContent = this.score.toLocaleString(); $('d-best').textContent = best.toLocaleString();
+    $('d-acc').textContent = this.shotsFired ? acc + '%' : '—';
+    $('d-time').textContent = fmtTime(this.runTime);
+    const local = this.localScores(), lrank = this.score > 0 ? local.filter((e) => e.score >= this.score).length + 1 : 99;
+    $('d-rank').textContent = lrank <= 10 ? `#${lrank} LOCAL` : '';
+    this.run.qualifies = lrank <= 10;
+    this.lbTab = 'local'; this.renderBoard();
+    this.fetchGlobal().then(() => { this.updateEntry(); if (this.lbTab === 'global') this.renderBoard(); });
+    this.updateEntry();
+    setTimeout(() => { if (this.state === 'dead') { document.exitPointerLock?.(); this.show('dead'); if (this.run.qualifies || this.run.globalQualifies) $('d-name').focus(); } }, 1600);
+  }
+  localScores() { try { const l = JSON.parse(localStorage.getItem('hf-scores') || '[]'); return Array.isArray(l) ? l : []; } catch { return []; } }
+  updateEntry() {
+    const r = this.run; if (!r) return;
+    const g = this.global?.top;
+    r.globalQualifies = !!g && r.score > 0 && (g.length < 10 || r.score > g[g.length - 1].score);
+    $('d-entry').classList.toggle('on', !r.saved && (r.qualifies || r.globalQualifies));
+  }
+  async fetchGlobal() {
+    try {
+      const res = await fetch('/api/scores', { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      this.global = await res.json(); this.global.ok = true;
+    } catch { this.global = { top: [], ok: false }; }
+  }
+  async saveScore(ev) {
+    ev?.preventDefault();
+    const r = this.run; if (!r || r.saved) return;
+    const name = ($('d-name').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+    if (!name) { $('d-name').focus(); return; }
+    localStorage.setItem('hf-name', name);
+    r.saved = true; r.name = name; $('d-save').disabled = true;
+    const entry = { name, score: r.score, wave: r.wave, kills: r.kills, heads: r.heads, acc: r.acc, time: r.time, date: new Date().toISOString().slice(0, 10) };
+    if (r.qualifies) {
+      const l = this.localScores(); l.push(entry); l.sort((a, b) => b.score - a.score || a.time - b.time);
+      localStorage.setItem('hf-scores', JSON.stringify(l.slice(0, 10)));
+    }
+    this.audio.play('perk');
+    if (r.globalQualifies) {
+      try {
+        const res = await fetch('/api/scores', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(entry) });
+        if (res.ok) { const d = await res.json(); this.global = { top: d.top, ok: true }; r.globalRank = d.rank; if (d.rank) $('d-rank').textContent += (r.qualifies ? ' · ' : '') + `#${d.rank} GLOBAL`; }
+      } catch {}
+      this.lbTab = 'global';
+    }
+    $('d-save').disabled = false;
+    this.updateEntry(); this.renderBoard();
+  }
+  renderBoard() {
+    const tab = this.lbTab || 'local';
+    $('lb-local').classList.toggle('sel', tab === 'local'); $('lb-global').classList.toggle('sel', tab === 'global');
+    const list = tab === 'local' ? this.localScores() : this.global?.top || [];
+    const r = this.run, me = (e) => r && r.saved && e.name === r.name && e.score === r.score && e.wave === r.wave;
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    $('lb').innerHTML = list.length ? list.map((e) => `<li class="${me(e) ? 'me' : ''}"><span class="n">${esc(e.name)}</span><span class="w">W${e.wave} · ${e.kills}K</span><span class="t">${fmtTime(e.time)}</span><span class="s">${Number(e.score).toLocaleString()}</span></li>`).join('')
+      : `<li class="empty">${tab === 'global' && this.global && !this.global.ok ? 'Global board unavailable offline' : tab === 'global' && !this.global ? 'Loading…' : 'No scores yet. Be the first.'}</li>`;
+    $('lb-note').textContent = tab === 'local' ? 'Saved in this browser' : 'Everyone, everywhere · top 10';
   }
 
   // ------------------------------------------------------------ frame

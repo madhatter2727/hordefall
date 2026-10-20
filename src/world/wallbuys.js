@@ -14,7 +14,7 @@ function boardTexture(name, cost) {
   g.fillStyle = '#1d2220'; g.fillRect(0, 0, 512, 256);
   for (let i = 0; i < 2400; i++) { g.fillStyle = `rgba(255,255,255,${Math.random() * 0.035})`; g.fillRect(Math.random() * 512, Math.random() * 256, 2 + Math.random() * 10, 1 + Math.random() * 2); }
   g.strokeStyle = 'rgba(232,226,210,.55)'; g.lineWidth = 3; g.setLineDash([14, 8]); g.strokeRect(22, 30, 468, 150); g.setLineDash([]);
-  g.fillStyle = '#ffcf6a'; g.fillRect(0, 0, 512, 14); g.fillRect(0, 242, 512, 14);
+  g.fillStyle = '#c99a3e'; g.fillRect(0, 0, 512, 10); g.fillRect(0, 246, 512, 10);
   g.fillStyle = 'rgba(240,234,220,.9)'; g.font = '600 40px Teko, Impact, sans-serif'; g.textAlign = 'left'; g.fillText(name, 26, 228);
   g.fillStyle = '#ffcf6a'; g.textAlign = 'right'; g.fillText(cost.toLocaleString(), 490, 228);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
@@ -32,7 +32,7 @@ export class WallBuys {
       board.position.z = 0.02; g.add(board);
       const frame = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.93, 0.03), new THREE.MeshStandardMaterial({ color: '#3c3a36', roughness: 0.6, metalness: 0.7 }));
       g.add(frame);
-      const gun = model.root.clone(true);
+      const gun = model.root.clone(true); gun.visible = true;
       gun.traverse((o) => { if (o.isMesh && hide.has(o.material)) o.visible = false; });
       if (model.leftHand) { const idx = model.root.children.indexOf(model.leftHand); if (idx >= 0) gun.children[idx].visible = false; }
       gun.position.set(0, 0.1, 0.07); gun.rotation.set(0, Math.PI / 2, 0); gun.scale.setScalar(s.id === 'lmg' ? 1.2 : 1.45);
@@ -41,7 +41,7 @@ export class WallBuys {
       gun.position.x -= ctr.x; gun.position.y += 0.1 - ctr.y;
       gun.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
       g.add(gun);
-      const lamp = new THREE.PointLight('#ffd9a0', 2.2, 3.2, 2); lamp.position.set(0, 0.75, 0.6); g.add(lamp);
+      const lamp = new THREE.PointLight('#ffd9a0', 0.7, 2.6, 2); lamp.position.set(0, 0.55, 0.75); g.add(lamp);
       scene.add(g);
       const normal = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.ny);
       this.list.push({ id: s.id, def, pos: new THREE.Vector3(s.x, 0, s.z), normal, group: g, gun });

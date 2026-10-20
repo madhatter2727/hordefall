@@ -69,14 +69,27 @@
   </div>
 </div>
 <div id="dead" class="screen">
-  <div class="panel">
-    <h2 class="red">YOU FELL</h2>
-    <div class="stats">
-      <div><span>Wave</span><b id="d-wave">0</b></div><div><span>Kills</span><b id="d-kills">0</b></div>
-      <div><span>Headshots</span><b id="d-heads">0</b></div><div><span>Accuracy</span><b id="d-acc">0</b></div>
-      <div><span>Score</span><b id="d-score">0</b></div><div><span>Best</span><b id="d-best">0</b></div>
+  <div class="go">
+    <div class="go-left">
+      <div class="go-kicker">RUN OVER</div>
+      <h2 class="red">YOU FELL</h2>
+      <div class="go-score"><span>SCORE</span><b id="d-score">0</b><em id="d-rank"></em></div>
+      <div class="stats">
+        <div><span>Wave</span><b id="d-wave">0</b></div><div><span>Time</span><b id="d-time">0:00</b></div>
+        <div><span>Kills</span><b id="d-kills">0</b></div><div><span>Headshots</span><b id="d-heads">0</b></div>
+        <div><span>Accuracy</span><b id="d-acc">0</b></div><div><span>Best</span><b id="d-best">0</b></div>
+      </div>
+      <form id="d-entry" class="go-entry" autocomplete="off">
+        <label>NEW HIGH SCORE — ENTER INITIALS</label>
+        <div><input id="d-name" maxlength="3" spellcheck="false" placeholder="AAA"><button type="submit" id="d-save">SAVE</button></div>
+      </form>
+      <button id="restart" class="big">DEPLOY AGAIN</button>
     </div>
-    <button id="restart" class="big">DEPLOY AGAIN</button>
+    <div class="go-right">
+      <div class="lb-tabs"><button id="lb-local" class="sel">LOCAL TOP 10</button><button id="lb-global">GLOBAL TOP 10</button></div>
+      <ol id="lb"></ol>
+      <div id="lb-note"></div>
+    </div>
   </div>
 </div>
 <div id="shop" class="screen">
