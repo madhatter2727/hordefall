@@ -7,7 +7,7 @@ const DEG = Math.PI / 180;
 const POSES = {
   ar: { hip: new THREE.Vector3(0.105, -0.088, -0.3), hipRot: new THREE.Euler(0.0, 0.04, 0.03), ads: new THREE.Vector3(0, 0, -0.17) },
   sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
-  mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
+  mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.245) },
 };
 
 function flashTexture() {
@@ -248,7 +248,7 @@ export class Arsenal {
 
     // muzzle flash (decayed at the start of the frame so it always shows for >= 1 frame)
     this.flash.visible = this.flashT > 0;
-    this.flashLight.intensity = Math.max(0, this.flashT / 0.05) * 3.5;
+    this.flashLight.intensity = Math.max(0, this.flashT / 0.05) * (d.id === 'sg' ? 1.3 : 3.5);
     this.updateShells(dt);
 
     // current spread (degrees) for the crosshair and shooting
@@ -367,7 +367,7 @@ export class Arsenal {
       m.mag.rotation.x = (d.id === 'mr' ? 0.03 : 0) + track([[0, 0, 0, 0], [0.17, 0, 0, 0], [0.3, -0.7, 0, 0], [0.38, -0.55, 0, 0], [0.53, -0.1, 0, 0], [0.6, 0, 0, 0]], t).x;
       m.mag.visible = t < 0.3 || t >= 0.38;
       // left hand: grab the mag, strip it, fetch a new one, seat + slap, (empty) rack the charging handle
-      const home = m.leftHome, grab = m.points.magBottom.clone().add(new THREE.Vector3(0.004, 0.034, 0.004)).sub(home);
+      const home = m.leftHome, grab = m.points.magBottom.clone().add(new THREE.Vector3(-0.016, 0.04, 0.004)).sub(home);
       let hand;
       if (t < 0.13) hand = grab.clone().multiplyScalar(smooth(t / 0.13));
       else if (t < 0.6) hand = grab.clone().add(mo);

@@ -99,7 +99,9 @@ class Decals {
     this.mesh.setMatrixAt(idx, this.m);
     this.mesh.count = Math.min(this.max, this.i);
     this.mesh.instanceMatrix.needsUpdate = true;
+    return idx;
   }
+  hide(idx) { this.m.makeScale(0, 0, 0); this.mesh.setMatrixAt(idx, this.m); this.mesh.instanceMatrix.needsUpdate = true; }
   clear() { this.i = 0; this.mesh.count = 0; }
 }
 
@@ -157,12 +159,22 @@ export class Effects {
     this.add = new Particles(scene, 1400, true);
     this.alpha = new Particles(scene, 1200, false);
     this.holes = new Decals(scene, quality === 'low' ? 160 : 400, bulletHoleTexture());
-    this.blood = new Decals(scene, 140, bloodTexture(), { roughness: 0.25 });
+    this.blood = new Decals(scene, 140, bloodTexture(), { roughness: 0.6 });
+    this.blood.mesh.material.color.set('#2a2420'); // scorch/ash marks rather than blood
     this.tracers = new Tracers(scene);
     // pooled world flash lights (muzzle + explosions)
     this.muzzleLight = new THREE.PointLight('#ffb35c', 0, 9, 2); scene.add(this.muzzleLight);
     this.flashT = 0;
     this.embers = this.makeEmbers(scene);
+    this.acid = new Decals(scene, 24, bloodTexture(), { roughness: 0.2 });
+    this.acid.mesh.material.color.set('#7dff4a'); this.acid.mesh.material.emissive = new THREE.Color(0.25, 1.0, 0.1); this.acid.mesh.material.emissiveIntensity = 1.4;
+    this.acid.mesh.material.emissiveMap = this.acid.mesh.material.map;
+    // shockwave rings (pooled)
+    this.waves = [0, 1].map(() => {
+      const m = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 64, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.3, 0.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+      m.visible = false; m.frustumCulled = false; scene.add(m);
+      return { mesh: m, t: 1, r: 8 };
+    });
   }
 
   makeEmbers(scene) {
@@ -218,20 +230,62 @@ export class Effects {
     this.holes.add(point, normal, rand(0.07, 0.11) * (metal ? 0.8 : 1));
   }
 
-  // flesh hit: blood spray in the bullet's direction + a mist
+  // flesh hit, gore-free: charred flakes + ash puff + molten ichor flecks
   bloodHit(point, dir, big = false) {
-    const n = big ? 22 : 12;
+    const n = big ? 16 : 9;
     for (let i = 0; i < n; i++) {
       const v = dir.clone().multiplyScalar(rand(1, 5)).add(new THREE.Vector3(rand(-1.5, 1.5), rand(-0.5, 2.5), rand(-1.5, 1.5)));
-      this.alpha.spawn({ pos: point, vel: v, life: rand(0.35, 0.8), size: rand(0.025, 0.06), col: new THREE.Color(rand(0.25, 0.4), 0.01, 0.015), grav: 11, floor: 0.02 });
+      this.alpha.spawn({ pos: point, vel: v, life: rand(0.35, 0.8), size: rand(0.02, 0.05), col: new THREE.Color(0.07, 0.055, 0.05), grav: 11, floor: 0.02 });
     }
-    for (let i = 0; i < (big ? 5 : 3); i++) {
-      this.alpha.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(0.5, 1.6)).add(new THREE.Vector3(rand(-0.4, 0.4), rand(0, 0.5), rand(-0.4, 0.4))), life: rand(0.35, 0.7), size: rand(0.15, 0.3), grow: 0.6, col: new THREE.Color(0.32, 0.02, 0.02), alpha: 0.5, drag: 4 });
+    for (let i = 0; i < (big ? 4 : 2); i++) {
+      this.alpha.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(0.5, 1.6)).add(new THREE.Vector3(rand(-0.4, 0.4), rand(0, 0.5), rand(-0.4, 0.4))), life: rand(0.35, 0.7), size: rand(0.12, 0.25), grow: 0.6, col: new THREE.Color(0.16, 0.13, 0.12), alpha: 0.45, drag: 4 });
+    }
+    for (let i = 0; i < (big ? 8 : 4); i++) {
+      this.add.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(0.8, 3)).add(new THREE.Vector3(rand(-1.2, 1.2), rand(0.3, 2.5), rand(-1.2, 1.2))), life: rand(0.25, 0.6), size: rand(0.02, 0.035), col: new THREE.Color(4.2, 1.5, 0.3), grav: 9, floor: 0.02 });
     }
     // the husks burn: hot ember sparks from wounds
     for (let i = 0; i < (big ? 10 : 5); i++) {
       this.add.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(1, 4)).add(new THREE.Vector3(rand(-2, 2), rand(0, 3), rand(-2, 2))), life: rand(0.2, 0.5), size: rand(0.012, 0.022), col: new THREE.Color(4, 1.4, 0.3), grav: 6, drag: 1.5, kind: 1 });
     }
+  }
+  // stylized ichor: hot glowing molten spray (matches the ember husks), no red gore
+  ichor(point, dir, amount = 1, acid = false) {
+    const hot = acid ? new THREE.Color(1.2, 4.5, 0.6) : new THREE.Color(5, 2.0, 0.4);
+    for (let i = 0; i < Math.round(14 * amount); i++) {
+      const v = dir.clone().multiplyScalar(rand(0.5, 3.5)).add(new THREE.Vector3(rand(-2, 2), rand(0.5, 4), rand(-2, 2)));
+      this.add.spawn({ pos: point, vel: v, life: rand(0.35, 0.9), size: rand(0.02, 0.045), col: hot, grav: 9, drag: 1, kind: i % 3 === 0 ? 1 : 0, floor: 0.02 });
+    }
+    for (let i = 0; i < Math.round(4 * amount); i++) {
+      this.alpha.spawn({ pos: point, vel: new THREE.Vector3(rand(-0.5, 0.5), rand(0.3, 1), rand(-0.5, 0.5)), life: rand(0.6, 1.2), size: rand(0.12, 0.2), grow: 0.6, col: new THREE.Color(0.12, 0.1, 0.09), alpha: 0.45, drag: 3, grav: -0.4 });
+    }
+  }
+  // thin continuous squirt from a stump
+  stumpSpray(point, dir, acid = false) {
+    const v = dir.clone().multiplyScalar(rand(1.2, 2.6)).add(new THREE.Vector3(rand(-0.4, 0.4), rand(0.6, 1.8), rand(-0.4, 0.4)));
+    this.add.spawn({ pos: point, vel: v, life: rand(0.25, 0.5), size: rand(0.015, 0.03), col: acid ? new THREE.Color(1, 4, 0.5) : new THREE.Color(4.5, 1.6, 0.35), grav: 9, floor: 0.02 });
+  }
+  acidTrail(pos) {
+    this.add.spawn({ pos, vel: new THREE.Vector3(rand(-0.3, 0.3), rand(-0.2, 0.3), rand(-0.3, 0.3)), life: rand(0.2, 0.4), size: rand(0.06, 0.12), col: new THREE.Color(0.6, 2.6, 0.3) });
+    if (Math.random() < 0.5) this.alpha.spawn({ pos, vel: new THREE.Vector3(0, 0.3, 0), life: rand(0.4, 0.8), size: 0.1, grow: 0.35, col: new THREE.Color(0.25, 0.4, 0.12), alpha: 0.35, drag: 2 });
+  }
+  acidBurst(point, ground = true) {
+    for (let i = 0; i < 26; i++) {
+      const v = new THREE.Vector3(rand(-4, 4), rand(1, 5.5), rand(-4, 4));
+      this.add.spawn({ pos: point, vel: v, life: rand(0.3, 0.8), size: rand(0.03, 0.07), col: new THREE.Color(0.9, 4, 0.5), grav: 12, drag: 1, kind: i % 2, floor: 0.02 });
+    }
+    for (let i = 0; i < 8; i++) this.alpha.spawn({ pos: point.clone().add(new THREE.Vector3(rand(-0.5, 0.5), rand(0, 0.4), rand(-0.5, 0.5))), vel: new THREE.Vector3(rand(-0.8, 0.8), rand(0.3, 1.2), rand(-0.8, 0.8)), life: rand(0.8, 1.6), size: rand(0.4, 0.7), grow: 1.2, col: new THREE.Color(0.28, 0.45, 0.12), alpha: 0.4, drag: 2.5, grav: -0.3 });
+    this.add.spawn({ pos: point.clone().setY(point.y + 0.2), life: 0.12, size: 1.6, col: new THREE.Color(0.8, 3, 0.4) });
+    if (ground) return this.acid.add(new THREE.Vector3(point.x, point.y + 0.014 + Math.random() * 0.004, point.z), new THREE.Vector3(0, 1, 0), rand(2.2, 2.8));
+  }
+  // ground slam: expanding dust ring + embers + shockwave mesh
+  slam(point, radius = 8) {
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2, sp = rand(5, 9);
+      this.alpha.spawn({ pos: point.clone().add(new THREE.Vector3(Math.cos(a) * 0.8, 0.2, Math.sin(a) * 0.8)), vel: new THREE.Vector3(Math.cos(a) * sp, rand(0.3, 1.5), Math.sin(a) * sp), life: rand(0.7, 1.3), size: rand(0.4, 0.8), grow: 1.4, col: new THREE.Color(0.38, 0.32, 0.3), alpha: 0.5, drag: 2.6, grav: -0.2 });
+    }
+    for (let i = 0; i < 30; i++) this.add.spawn({ pos: point.clone().setY(point.y + 0.2), vel: new THREE.Vector3(rand(-6, 6), rand(2, 8), rand(-6, 6)), life: rand(0.3, 0.8), size: rand(0.015, 0.03), col: new THREE.Color(5, 1.8, 0.4), grav: 12, kind: 1, floor: 0.02 });
+    const w = this.waves.find((x) => x.t >= 1) || this.waves[0];
+    w.t = 0; w.r = radius; w.mesh.position.copy(point).setY(point.y + 0.06); w.mesh.visible = true;
   }
   bloodPool(pos, size = 1, y = 0) { this.blood.add(new THREE.Vector3(pos.x, y + 0.012 + Math.random() * 0.004, pos.z), new THREE.Vector3(0, 1, 0), rand(0.6, 1.2) * size); }
 
@@ -239,6 +293,12 @@ export class Effects {
     this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera);
     this.muzzleLight.intensity = Math.max(0, this.flashT / 0.05) * 30; this.flashT -= dt;
     this.embers.material.uniforms.time.value = time;
+    for (const w of this.waves) {
+      if (w.t >= 1) { w.mesh.visible = false; continue; }
+      w.t = Math.min(1, w.t + dt / 0.55);
+      const k = 1 - Math.pow(1 - w.t, 2.2);
+      w.mesh.scale.setScalar(0.5 + k * w.r); w.mesh.material.opacity = (1 - w.t) * 0.9;
+    }
   }
-  clear() { this.holes.clear(); this.blood.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
+  clear() { this.holes.clear(); this.blood.clear(); this.acid.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
 }

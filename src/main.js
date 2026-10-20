@@ -91,7 +91,12 @@ class Game {
       player: this.player, fx: this.fx, audio: this.audio,
       onPlayerHit: (dmg, from, e) => this.onPlayerHit(dmg, from, e),
       onKill: (e, info) => this.onKill(e, info),
-      onWaveStart: (n, count) => this.banner(`WAVE ${n}`, `${count} hostiles inbound`),
+      onWaveStart: (n, count, boss) => boss ? this.banner(`BOSS WAVE ${n}`, 'Something big is coming', 'boss') : this.banner(`WAVE ${n}`, `${count} hostiles inbound`),
+      onBoss: (e) => { this.banner('THE COLOSSUS', 'Armored. Hit the glowing head and back core', 'boss'); this.shake(0.4); $('bossbar').classList.add('on'); },
+      onBossDead: () => { this.banner('COLOSSUS DOWN', '+3000', 'boss'); this.shake(0.8); this.hitstop = 0.25; $('bossbar').classList.remove('on'); },
+      onShake: (a) => this.shake(a),
+      onAcid: (dmg, from, tick) => this.onAcid(dmg, from, tick),
+      onSever: (e, name) => { if (!e.dead || name === 'head') this.feed(name === 'head' ? '<b>DECAPITATED</b>' : '<b>DISMEMBERED</b>', 25); this.score += 25; },
       onWaveEnd: (n) => { this.arsenal.refill(); this.banner(`WAVE ${n} CLEARED`, 'Ammo restocked'); this.audio.play('waveEnd'); this.score += 250 * n; },
     });
 
@@ -162,7 +167,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0;
-    this.damageFx = 0; this.hudDirty = true;
+    this.damageFx = 0; this.acidFx = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
     if (!fromMenu) this.input.lock();
@@ -173,9 +178,9 @@ class Game {
       if (this.state === 'paused' || this.state === 'play') { this.state = 'play'; this.show(null); }
     } else if (this.state === 'play') { this.state = 'paused'; this.show('pause'); }
   }
-  banner(title, sub) {
+  banner(title, sub, cls = '') {
     const b = $('banner'); $('banner-t').textContent = title; $('banner-s').textContent = sub;
-    b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
+    b.classList.remove('on', 'boss'); void b.offsetWidth; b.classList.add('on'); if (cls) b.classList.add(cls);
     if (title.startsWith('WAVE') && !title.includes('CLEARED')) this.audio.play('waveStart');
   }
   shake(a) { this.trauma = Math.min(1, this.trauma + a); }
@@ -208,7 +213,7 @@ class Game {
       let dmg = lerp(def.damage, def.damageMin, fall);
       dmg *= h.part === 'head' ? def.headMult : h.part === 'limb' ? def.limbMult : 1;
       if (hitAny) dmg *= 0.7; // pierced
-      const res = this.horde.damage(h.e, dmg, h.part, h.point, dir, def);
+      const res = this.horde.damage(h.e, dmg, h.part, h.point, dir, def, h.pi);
       this.onHit(h, dmg, res);
       hitAny = true;
       if (pierce-- <= 0) { endT = h.t; break; }
@@ -231,16 +236,17 @@ class Game {
     }
   }
   onHit(h, dmg, res) {
+    if (res.corpse) return;
     const head = h.part === 'head';
     const mk = $('hitmarker');
     mk.className = ''; void mk.offsetWidth;
-    mk.className = res.killed ? 'kill' : head ? 'head' : 'hit';
-    if (!res.killed && !(this.pelletMode && this.pelletSounded)) { this.audio.play(head ? 'headshot' : 'hit'); this.pelletSounded = this.pelletMode; }
+    mk.className = res.killed ? 'kill' : head || res.weak ? 'head' : res.armor ? 'armor' : 'hit';
+    if (!res.killed && !res.armor && !(this.pelletMode && this.pelletSounded)) { this.audio.play(head || res.weak ? 'headshot' : 'hit'); this.pelletSounded = this.pelletMode; }
     if (!this.dmgNumsOn) return;
     if (this.pelletMode) { // shotgun: one number per target per shot
       const a = this.pelletAcc.get(h.e) || { dmg: 0, point: h.point, head: false, killed: false };
       a.dmg += dmg; a.head ||= head; a.killed ||= res.killed; this.pelletAcc.set(h.e, a);
-    } else this.damageNumber(h.point, Math.round(dmg), head, res.killed);
+    } else this.damageNumber(h.point, Math.round(dmg), head || res.weak, res.killed);
   }
   flushPellets() {
     for (const a of this.pelletAcc.values()) this.damageNumber(a.point, Math.round(a.dmg), a.head, a.killed);
@@ -262,8 +268,7 @@ class Game {
     const pts = (e.type.points + (info.head ? 50 : 0)) * (1 + Math.floor((this.horde.wave - 1) / 3) * 0.5);
     this.score += Math.round(pts);
     this.audio.play('kill'); if (info.head) this.audio.play('headshot');
-    this.hitstop = e.type.brute ? 0.07 : 0.035;
-    this.shake(e.type.brute ? 0.2 : 0.06);
+    if (!e.type.boss) { this.hitstop = e.type.brute ? 0.07 : 0.035; this.shake(e.type.brute ? 0.2 : 0.06); }
     this.feed(`${info.head ? '<b>HEADSHOT</b> ' : ''}${e.type.name}`, Math.round(pts));
     this.hudDirty = true;
   }
@@ -278,7 +283,23 @@ class Game {
     s.life = 0.8; s.pos.copy(p).add(new THREE.Vector3(rand(-0.15, 0.15), 0.1, rand(-0.15, 0.15)));
     s.el.textContent = v; s.el.className = 'dn on' + (head ? ' head' : '') + (kill ? ' kill' : '');
   }
-  onPlayerHit(dmg, from, e) {
+  onAcid(dmg, from, tick) {
+    if (!this.player.alive) return;
+    this.player.hurt(dmg);
+    this.acidFx = Math.min(1, (this.acidFx || 0) + (tick ? dmg / 12 : 0.55 + dmg / 40));
+    if (tick) { if (this.player.alive) return; this.onDeath(); return; }
+    this.audio.play('hurt'); this.shake(0.2 + dmg / 90);
+    this.arsenal.camKick.impulse(rand(-4, 4), rand(-5, 5), rand(-6, 6));
+    const away = this.player.pos.clone().sub(from); away.y = 0;
+    if (away.lengthSq() > 0.01) {
+      away.normalize();
+      const ang = Math.atan2(away.x, away.z) - this.player.yaw;
+      const di = $('dmgdir'); di.style.transform = `translate(-50%,-50%) rotate(${-ang + Math.PI}rad)`;
+      di.classList.remove('on'); void di.offsetWidth; di.classList.add('on');
+    }
+    if (!this.player.alive) this.onDeath();
+  }
+  onPlayerHit(dmg, from, e, opts = {}) {
     if (!this.player.alive) return;
     this.player.hurt(dmg);
     this.damageFx = Math.min(1, this.damageFx + dmg / 35);
@@ -287,8 +308,8 @@ class Game {
     this.arsenal.camKick.impulse(rand(-6, 6), rand(-8, 8), rand(-10, 10));
     // knockback from brutes
     const away = this.player.pos.clone().sub(from); away.y = 0; away.normalize();
-    this.player.vel.addScaledVector(away, e.type.brute ? 9 : 2.5);
-    if (e.type.brute) this.player.vel.y = Math.max(this.player.vel.y, 3);
+    this.player.vel.addScaledVector(away, opts.knock ?? (e.type.brute ? 9 : 2.5));
+    if (e.type.brute || opts.knock) this.player.vel.y = Math.max(this.player.vel.y, opts.knock ? 4.5 : 3);
     // directional indicator
     const ang = Math.atan2(away.x, away.z) - this.player.yaw;
     const di = $('dmgdir'); di.style.transform = `translate(-50%,-50%) rotate(${-ang + Math.PI}rad)`;
@@ -339,6 +360,8 @@ class Game {
     const targetFov = lerp(HIP_FOV + sprintF + slideF, d.adsFov, ads);
     if (this.state === 'play') this.camera.fov = damp(this.camera.fov, targetFov, ads > 0 && ads < 1 ? 40 : 14, dt);
     this.vmCamera.fov = lerp(VM_HIP_FOV, d.vmAdsFov, ads);
+    // when aiming, clip the stock/buffer tube right under the eye so it never fills the bottom of the screen
+    this.vmCamera.near = lerp(0.01, d.id === 'ar' ? 0.1 : d.id === 'sg' ? 0.1 : 0.095, ads * ads);
     this.camera.updateProjectionMatrix(); this.vmCamera.updateProjectionMatrix();
     this.placeCamera(dt);
 
@@ -358,6 +381,7 @@ class Game {
     u.lowHealth.value = p.alive ? clamp((45 - p.health) / 45, 0, 1) : 1;
     u.dead.value = this.state === 'dead' ? clamp(this.deadT / 1.5, 0, 1) : 0;
     u.flash.value = Math.max(0, A.flashT / 0.05);
+    this.acidFx = Math.max(0, (this.acidFx || 0) - dt * 0.7); u.acid.value = this.acidFx;
 
     this.updateHUD(raw, ads);
     this.cpuMs = lerp(this.cpuMs || 0, performance.now() - t0, 0.1);
@@ -422,6 +446,9 @@ class Game {
     $('hpfill').classList.toggle('low', p.health < 35);
     $('wave').textContent = this.horde.wave || '—';
     $('left').textContent = this.horde.remaining();
+    const boss = this.horde.boss;
+    if (boss && !boss.dead) { $('bossfill').style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100).toFixed(1)}%`; $('bossbar').classList.toggle('stun', boss.bs === 'stun'); }
+    else if (this.horde.bossDelay <= 0) $('bossbar').classList.remove('on');
     if (this.debugFps) $('fps').textContent = `${Math.round(this.fps)} fps`;
     // floating damage numbers
     const v = new THREE.Vector3();
@@ -448,7 +475,9 @@ window.__debug = {
   teleport(x, y, z) { game.player.pos.set(x, y, z); game.player.vel.set(0, 0, 0); },
   select(i) { game.arsenal.select(i); },
   info() { const A = game.arsenal; return { state: game.state, weapon: A.def.id, mag: A.current.mag, ads: A.ads, fps: game.fps, cpuMs: game.cpuMs, hp: game.player.health, wave: game.horde.wave, alive: game.horde.aliveCount(), idle: game.horde.enemies.filter((e) => !e.dead && !e.aware).length, kills: game.kills, pos: game.player.pos.toArray() }; },
-  spawn(n, dist, idle) { game.horde.debugSpawn(n, dist, idle); },
+  spawn(n, dist, idle, type, ang) { return game.horde.debugSpawn(n, dist, idle, type ?? null, ang ?? null).length; },
+  boss(dist = 16) { game.horde.wave = 4; game.horde.toSpawn = 0; game.horde.nextWave(); game.horde.bossDelay = 0; game.horde.toSpawn = 0; game.horde.debugSpawn(1, dist, false, 'boss', game.player.yaw + Math.PI); },
+  bossInfo() { const b = game.horde.boss; return b ? { hp: Math.round(b.hp), max: Math.round(b.maxHp), bs: b.bs, dead: b.dead } : null; },
   god(on) { game.god = on; game.player.hurt = on ? () => {} : Player.prototype.hurt; },
   quality(q) { game.applyQuality(q); },
   frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },

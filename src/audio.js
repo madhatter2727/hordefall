@@ -131,6 +131,13 @@ export class Audio {
         break;
       }
       case 'waveEnd': [523, 659, 784].forEach((f, i) => this.tone({ t: i * 0.09, dur: 0.6, type: 'triangle', freq: f, gain: 0.08, send: 0.5 })); break;
+      case 'spitCharge': { const pan = o.pan || 0, g = o.gain ?? 1; this.burst({ dur: 0.8, type: 'bandpass', freq: 400, q: 5, gain: 0.35 * g, pan, attack: 0.3, freqEnd: 1400, rate: 0.8 }); break; }
+      case 'spit': { const pan = o.pan || 0, g = o.gain ?? 1; this.burst({ dur: 0.18, type: 'bandpass', freq: 900, q: 1.5, gain: 0.6 * g, pan, freqEnd: 300 }); this.tone({ dur: 0.12, freq: 260, freqEnd: 120, gain: 0.2 * g, pan }); break; }
+      case 'splash': { const g = o.gain ?? 1, pan = o.pan || 0; this.burst({ dur: 0.35, type: 'lowpass', freq: 1400, gain: 0.7 * g, pan, freqEnd: 300 }); this.burst({ t: 0.02, dur: 0.5, type: 'highpass', freq: 3500, gain: 0.25 * g, pan, attack: 0.02 }); break; }
+      case 'sever': this.burst({ dur: 0.09, type: 'lowpass', freq: 900, gain: 0.7 }); this.burst({ dur: 0.05, type: 'bandpass', freq: 2600, q: 2, gain: 0.3 }); this.tone({ dur: 0.1, freq: 160, freqEnd: 70, gain: 0.3 }); break;
+      case 'armor': this.tone({ dur: 0.06, type: 'square', freq: 2400, freqEnd: 2100, gain: 0.05 }); this.burst({ dur: 0.04, type: 'highpass', freq: 4500, gain: 0.25 }); break;
+      case 'roar': { const g = o.gain ?? 1; this.burst({ dur: 1.4, type: 'bandpass', freq: 220, q: 2, gain: 0.9 * g, attack: 0.1, freqEnd: 120, rate: 0.5, send: 0.5 }); this.tone({ dur: 1.2, type: 'sawtooth', freq: 70, freqEnd: 48, gain: 0.25 * g, attack: 0.1, send: 0.4 }); break; }
+      case 'slam': { const g = o.gain ?? 1; this.tone({ dur: 0.7, freq: 70, freqEnd: 28, gain: 0.9 * g }); this.burst({ dur: 0.6, type: 'lowpass', freq: 500, gain: 1.0 * g, freqEnd: 120, send: 0.5 }); break; }
       case 'click': this.tone({ dur: 0.04, type: 'square', freq: 900, gain: 0.04 }); break;
     }
   }

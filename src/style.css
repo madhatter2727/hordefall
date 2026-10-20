@@ -83,3 +83,14 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 26px; margin-bottom: 24px; font-size: 18px; }
 .stats div { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,.1); padding: 4px 0; }
 .stats b { font: 600 26px 'Teko', sans-serif; color: #ffb347; }
+#hitmarker.armor { animation: hm .18s ease-out; } #hitmarker.armor i { background: #9aa0a8; height: 7px; top: -3px; }
+#banner.boss #banner-t { color: #ffd9c2; font-size: 76px; text-shadow: 0 0 34px rgba(255,60,20,.95), 0 0 8px rgba(255,140,60,.8), 0 3px 10px #000; }
+#banner.boss #banner-s { color: #ffb08a; }
+#banner.boss.on { animation: bn 4.2s ease-out forwards; }
+#bossbar { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); width: min(560px, 60vw); text-align: center; opacity: 0; transition: opacity .4s; pointer-events: none; }
+#bossbar.on { opacity: 1; }
+#bossbar .bn { font: 600 22px 'Teko', sans-serif; letter-spacing: .32em; color: #ffd2b8; text-shadow: 0 0 12px rgba(255,80,30,.8), 0 2px 6px #000; }
+#bossbar .bb { height: 10px; margin-top: 2px; background: rgba(20,8,6,.75); border: 1px solid rgba(255,140,90,.55); box-shadow: 0 0 14px rgba(255,60,20,.35); }
+#bossfill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff3b1f, #ff8a3a); box-shadow: 0 0 10px rgba(255,90,40,.9); transition: width .12s; }
+#bossbar.stun #bossfill { background: linear-gradient(90deg, #ffd23f, #fff2a8); }
+#bossbar .bw { margin-top: 4px; font-size: 11px; letter-spacing: .28em; color: rgba(255,210,180,.75); }
