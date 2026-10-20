@@ -21,7 +21,7 @@ with sync_playwright() as p:
     if want('shop'):
         gt(3.5)
         ev("__debug.clearWave()")
-        pg.wait_for_function("game.state === 'shop'", timeout=60000)
+        pg.wait_for_function("game.state === 'shop'", timeout=200000)
         ev("__debug.pts(2600)"); ev("game.renderBuys()")
         pg.wait_for_timeout(2500); shot('shop')
         pg.keyboard.press('Digit2'); pg.wait_for_timeout(500)
