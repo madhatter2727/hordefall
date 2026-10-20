@@ -1,5 +1,5 @@
 // Guns you spawn with (up to 3 carried; the rest are bought from wall-buys / the shop)
-export const START_LOADOUT = ['ar', 'sg'];
+export const START_LOADOUT = ['ar', 'rv'];
 
 // Per-weapon handling. Angles in degrees unless noted. Distances in meters.
 export const WEAPONS = [
@@ -38,5 +38,41 @@ export const WEAPONS = [
     adsTime: 0.28, adsFov: 38, vmAdsFov: 34, weight: 1.45, sight: 'reddot',
     sound: { body: 1.3, crack: 1.4, thump: 85, tail: 1.8, pitch: 0.82 },
     tracerChance: 1,
+  },
+  {
+    id: 'smg', name: 'VX-9 HORNET', short: 'VX-9', type: 'Submachine gun', slot: 4, cost: 1250,
+    auto: true, rpm: 900, pellets: 1,
+    damage: 22, damageMin: 13, falloffStart: 12, falloffEnd: 32, headMult: 1.6, limbMult: 0.8,
+    mag: 32, reserve: 256, reload: 1.75, reloadEmpty: 2.2,
+    hipSpread: 2.0, adsSpread: 0.35, moveSpread: 1.2, bloomPerShot: 0.14, bloomMax: 1.4, bloomRecover: 6,
+    recoil: { up: 0.22, upRamp: 0.012, upMax: 0.38, side: 0.16, pattern: [0, 0.06, -0.04, 0.1, -0.08, 0.05, -0.1, 0.12], adsMult: 0.6, recover: 10 },
+    kick: { back: 0.04, up: 0.009, pitch: 0.06, yaw: 0.03, roll: 0.06, cam: 0.6 },
+    adsTime: 0.16, adsFov: 56, vmAdsFov: 42, weight: 0.85, sight: 'iron', adsNear: 0.15,
+    sound: { body: 0.72, crack: 0.75, thump: 140, tail: 0.75, pitch: 1.28 },
+    tracerChance: 0.5, smoke: 0.35, shake: 0.02, flash: 0.85,
+  },
+  {
+    id: 'lmg', name: 'HX-60 RAMPART', short: 'HX-60', type: 'Light machine gun', slot: 5, cost: 2500,
+    auto: true, rpm: 640, pellets: 1,
+    damage: 34, damageMin: 24, falloffStart: 30, falloffEnd: 65, headMult: 1.6, limbMult: 0.85, pierce: 1,
+    mag: 100, reserve: 300, reload: 4.4, reloadEmpty: 5.0,
+    hipSpread: 3.6, adsSpread: 0.2, moveSpread: 3.0, bloomPerShot: 0.12, bloomMax: 2.0, bloomRecover: 3.5,
+    recoil: { up: 0.3, upRamp: 0.01, upMax: 0.5, side: 0.2, pattern: [0, 0.1, 0.15, 0.05, -0.1, -0.18, -0.1, 0.05, 0.16, 0.1], adsMult: 0.55, recover: 6 },
+    kick: { back: 0.06, up: 0.014, pitch: 0.1, yaw: 0.03, roll: 0.07, cam: 1.1 },
+    adsTime: 0.34, adsFov: 50, vmAdsFov: 40, weight: 1.7, sight: 'iron', adsNear: 0.13,
+    sound: { body: 1.2, crack: 1.0, thump: 92, tail: 1.4, pitch: 0.88 },
+    tracerChance: 0.8, smoke: 0.7, shake: 0.045, flash: 1.2,
+  },
+  {
+    id: 'rv', name: 'R-44 WARDEN', short: 'R-44', type: 'Magnum revolver', slot: 6, cost: 750,
+    auto: false, rpm: 170, pellets: 1, revolver: true,
+    damage: 115, damageMin: 85, falloffStart: 25, falloffEnd: 55, headMult: 2.2, limbMult: 0.9, pierce: 1,
+    mag: 6, reserve: 36, reload: 2.55, reloadEmpty: 2.55,
+    hipSpread: 2.6, adsSpread: 0.05, moveSpread: 2.2, bloomPerShot: 0.8, bloomMax: 1.6, bloomRecover: 4,
+    recoil: { up: 2.4, upRamp: 0, upMax: 2.4, side: 0.5, pattern: [0.2, -0.3, 0.25, -0.2], adsMult: 0.8, recover: 7 },
+    kick: { back: 0.09, up: 0.05, pitch: 0.42, yaw: 0.05, roll: 0.1, cam: 2.2 },
+    adsTime: 0.2, adsFov: 56, vmAdsFov: 48, weight: 0.8, sight: 'iron', adsNear: 0.09,
+    sound: { body: 1.45, crack: 1.5, thump: 72, tail: 1.9, pitch: 0.78 },
+    tracerChance: 1, smoke: 1.2, shake: 0.14, flash: 1.3,
   },
 ];

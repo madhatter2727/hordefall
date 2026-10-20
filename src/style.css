@@ -156,3 +156,9 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 .sh-foot button.big { margin: 0; } .sh-foot small { font-size: 12px; opacity: .6; margin-left: 8px; letter-spacing: .2em; }
 #skip em { font-style: normal; color: #ffcf6a; margin-left: 6px; }
 .sh-timer { font-size: 13px; letter-spacing: .25em; opacity: .7; } .sh-timer b { font: 600 22px 'Teko', sans-serif; color: #fff; }
+
+#buyprompt { position: absolute; top: 64%; left: 50%; transform: translateX(-50%); font: 500 22px 'Teko', sans-serif; letter-spacing: .12em; color: #f3ede2; background: linear-gradient(90deg, transparent, rgba(10,12,14,.72) 18%, rgba(10,12,14,.72) 82%, transparent); padding: 6px 48px 3px; opacity: 0; transition: opacity .15s; white-space: nowrap; }
+#buyprompt.on { opacity: 1; }
+#buyprompt kbd { font: inherit; color: #111; background: #ffcf6a; padding: 0 8px; margin-right: 8px; border-radius: 2px; }
+#buyprompt i { font-style: normal; opacity: .6; }
+#buyprompt .ok { color: #ffcf6a; margin-left: 10px; } #buyprompt .no { color: #ff5a3c; margin-left: 10px; }

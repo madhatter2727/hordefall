@@ -48,5 +48,21 @@ with sync_playwright() as p:
         gt(1.4); shot('boom-3')
         print('after', ev("JSON.stringify({alive: game.horde.aliveCount(), dead: game.horde.enemies.filter(e=>e.dead).length, lost: game.horde.enemies.map(e=>e.lost).join(','), barrels: __debug.barrels().filter(b=>!b.alive).length, kills: game.kills, hp: game.player.health})"))
         ev("game.barrels.respawn(game.player.pos)"); print('respawned', sum(1 for b in json.loads(ev("JSON.stringify(__debug.barrels())")) if b['alive']))
+    if want('guns'):
+        ev("game.horde.running = false; game.horde.reset()"); gt(0.5)
+        def idx(i): return ev(f"game.arsenal.weapons.findIndex(w => w.def.id === '{i}')")
+        for gid in ['rv', 'smg', 'lmg']:
+            ev(f"__debug.give('{gid}')"); gt(0.2)
+            ev(f"game.arsenal.select({idx(gid)})"); gt(1.0)
+            print(gid, 'slots', ev("game.arsenal.weapons.map(w=>w.def.id).join(',')"), 'cur', ev("game.arsenal.current.def.id"))
+            shot(f'{gid}-hip')
+            ev("__debug.set({right:true})"); gt(0.6); shot(f'{gid}-ads')
+            ev("__debug.set({left:true, leftPressed:true})"); gt(0.03); shot(f'{gid}-fire'); gt(0.25 if gid != 'rv' else 0.02); ev("__debug.set({left:false, leftPressed:false})")
+            ev("__debug.set({right:false})"); gt(0.6)
+            ev("game.arsenal.startReload()")
+            for ft in ([0.14, 0.27, 0.45, 0.6] if gid == 'rv' else [0.35, 0.6]):
+                ev(f"game.arsenal.freezeT = {ft}"); gt(0.15); shot(f'{gid}-reload-{int(ft*100)}')
+            ev("game.arsenal.freezeT = undefined"); gt(3.0 if gid != 'lmg' else 5.2)
+            print(gid, 'ammo', ev("JSON.stringify({mag: game.arsenal.current.mag, res: game.arsenal.current.reserve, rel: !!game.arsenal.reload})"))
     print('ERRORS:', errs[:8])
     b.close()

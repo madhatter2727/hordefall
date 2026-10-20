@@ -8,6 +8,9 @@ const POSES = {
   ar: { hip: new THREE.Vector3(0.105, -0.088, -0.3), hipRot: new THREE.Euler(0.0, 0.04, 0.03), ads: new THREE.Vector3(0, 0, -0.17) },
   sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
   mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.245) },
+  smg: { hip: new THREE.Vector3(0.1, -0.086, -0.3), hipRot: new THREE.Euler(0.0, 0.045, 0.03), ads: new THREE.Vector3(0, 0, -0.2) },
+  lmg: { hip: new THREE.Vector3(0.118, -0.1, -0.33), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.19) },
+  rv: { hip: new THREE.Vector3(0.105, -0.1, -0.4), hipRot: new THREE.Euler(0.02, 0.07, 0.04), ads: new THREE.Vector3(0, 0, -0.42) },
 };
 
 function flashTexture() {
@@ -160,6 +163,8 @@ export class Arsenal {
     const empty = w.mag === 0;
     if (d.pump) {
       this.reload = { t: 0, kind: 'shells', empty, phase: 'start', phaseT: 0, inserted: false };
+    } else if (d.revolver) {
+      this.reload = { t: 0, kind: 'cyl', empty, dur: d.reload, events: new Set() };
     } else {
       this.reload = { t: 0, kind: 'mag', empty, dur: empty ? d.reloadEmpty : d.reload, events: new Set() };
     }
@@ -184,12 +189,13 @@ export class Arsenal {
     if (input.hit('KeyV') && !this.melee && !this.swap) {
       this.melee = { t: 0, hit: false };
       if (this.reload && this.reload.kind === 'shells') this.reload = null;
-      else if (this.reload && this.reload.t < 0.55) { this.resetReloadPose(); this.reload = null; }
+      else if (this.reload && this.reload.kind === 'mag' && this.reload.t < 0.55) { this.resetReloadPose(); this.reload = null; }
+      else if (this.reload && this.reload.kind === 'cyl' && this.reload.t < 0.4) { this.resetReloadPose(); this.reload = null; }
       this.hooks.audio?.play('swing', { gain: 0.8 });
     }
 
     // ---- ADS ----
-    const canAds = !this.swap && !this.melee && !(this.reload && this.reload.kind === 'mag' && this.reload.t < 0.85);
+    const canAds = !this.swap && !this.melee && !(this.reload && (this.reload.kind === 'mag' || this.reload.kind === 'cyl') && this.reload.t < 0.85);
     this.adsTarget = input.mouse.right && canAds ? 1 : 0;
     const adsSpeed = 1 / d.adsTime;
     this.ads = clamp(this.ads + Math.sign(this.adsTarget - this.ads) * adsSpeed * dt, 0, 1);
@@ -235,6 +241,12 @@ export class Arsenal {
       anim.rot.x += back * 0.05; anim.rot.z += back * 0.06; anim.pos.y -= back * 0.006;
       if (p > 0.2 && !this.pumpBack) { this.pumpBack = true; this.hooks.audio?.play('pumpBack'); }
       if (p > 0.55 && !this.pumpFwd) { this.pumpFwd = true; this.hooks.audio?.play('pumpFwd'); this.ejectShell(true); }
+    }
+
+    if (d.revolver) {
+      model.cyl.rotation.z = damp(model.cyl.rotation.z, this.cylAngle || 0, 30, dt);
+      this.hammerT = Math.min(1, (this.hammerT ?? 1) + dt / 0.12);
+      const h = this.hammerT; model.hammer.rotation.x = h < 0.25 ? 0.55 * smooth(h / 0.25) : 0.55 * (1 - smooth((h - 0.25) / 0.2)) * (h < 0.45 ? 1 : 0);
     }
 
     // ---- sway / inertia ----
@@ -290,7 +302,7 @@ export class Arsenal {
 
     // muzzle flash (decayed at the start of the frame so it always shows for >= 1 frame)
     this.flash.visible = this.flashT > 0;
-    this.flashLight.intensity = Math.max(0, this.flashT / 0.05) * (d.id === 'sg' ? 1.3 : 3.5);
+    this.flashLight.intensity = Math.max(0, this.flashT / 0.05) * (d.id === 'sg' ? 1.3 : d.revolver ? 2.2 : 3.5);
     this.updateShells(dt);
 
     // current spread (degrees) for the crosshair and shooting
@@ -336,7 +348,7 @@ export class Arsenal {
     this.camKick.impulse(K.cam * rand(0.8, 1.2) * lerp(1, 0.6, a), rand(-1, 1) * K.cam * 0.4, rand(-1, 1) * K.cam * 0.6);
 
     this.flashT = 0.05; this.flash.rotation.z = rand(0, Math.PI * 2);
-    this.flash.scale.setScalar(rand(0.8, 1.25) * (d.id === 'sg' ? 1.35 : d.id === 'mr' ? 1.1 : 1) * lerp(1, 0.7, a));
+    this.flash.scale.setScalar(rand(0.8, 1.25) * (d.flash ?? (d.id === 'sg' ? 1.35 : d.id === 'mr' ? 1.1 : 1)) * lerp(1, 0.7, a));
     this.flashFront.rotation.z = rand(0, 6.28);
     // world-space muzzle position for tracers + light
     const m = w.model;
@@ -345,6 +357,7 @@ export class Arsenal {
     this.hooks.muzzleWorld?.(mw, d);
     this.hooks.audio?.play('shot', { weapon: d });
     if (d.pump) { this.pumpT = 0; this.pumpBack = false; this.pumpFwd = false; }
+    else if (d.revolver) { this.cylAngle = (this.cylAngle || 0) - Math.PI / 3; this.hammerT = 0.25; }
     else { this.ejectShell(false); }
     this.hooks.onFire?.(d);
   }
@@ -387,6 +400,7 @@ export class Arsenal {
     if (m.bolt) m.bolt.position.z = 0;
     m.leftHand.position.copy(m.leftHome); m.leftHand.rotation.set(0, 0, 0);
     if (m.shell) m.shell.visible = false;
+    if (m.crane) { m.crane.rotation.z = 0; m.cases.visible = true; m.loader.visible = true; m.loaderRounds.visible = true; m.loader.position.set(0, 0, 0); }
   }
   updateReload(dt, anim) {
     const r = this.reload; if (!r) return;
@@ -434,6 +448,8 @@ export class Arsenal {
         ev('bolt', 0.8, () => { this.hooks.audio?.play('bolt'); this.rotKick.impulse(1.4, 0.3, 0.6); this.posKick.impulse(0, 0.12, 0.45); });
       }
       if (t >= 1) { this.reload = null; this.resetReloadPose(); }
+    } else if (r.kind === 'cyl') {
+      this.updateCylReload(r, dt, anim, w, d, m);
     } else {
       // shotgun: tilt in, one shell per cycle (hand: caddy -> under the loading port -> thumb it in), tilt out
       r.phaseT += dt;
@@ -470,6 +486,53 @@ export class Arsenal {
         this.reload = null; this.resetReloadPose();
         if (r.empty) { this.pumpT = 0; this.pumpBack = false; this.pumpFwd = true; }
       }
+    }
+  }
+
+  // revolver: swing the cylinder out, dump the brass, speedloader in, flick it shut
+  updateCylReload(r, dt, anim, w, d, m) {
+    r.t += dt / r.dur;
+    if (this.freezeT !== undefined) r.t = this.freezeT;
+    const t = r.t, ev = (name, at, fn) => { if (t >= at && !r.events.has(name)) { r.events.add(name); fn(); } };
+    const S = (a, b) => smooth(clamp((t - a) / (b - a), 0, 1));
+    const inn = S(0, 0.1) * (1 - S(0.82, 0.97));
+    anim.pos.x -= 0.075 * inn; anim.pos.y += 0.035 * inn; anim.pos.z += 0.06 * inn;
+    anim.rot.z -= 0.35 * inn; anim.rot.y += 0.25 * inn;
+    // muzzle up to dump the empties, then down toward the loader
+    const up = S(0.16, 0.24) * (1 - S(0.3, 0.38)), down = S(0.32, 0.4) * (1 - S(0.62, 0.72));
+    anim.rot.x += 0.85 * up - 0.3 * down;
+    m.crane.rotation.z = 1.2 * S(0.08, 0.15) * (1 - S(0.66, 0.7));
+    // left hand brings the speedloader to the cylinder face
+    m.crane.updateMatrix();
+    const rear = m.cylRear.clone().applyMatrix4(m.crane.matrix);
+    const at = rear.clone().add(new THREE.Vector3(0, 0, 0.006 + 0.03 * (1 - S(0.44, 0.52))));
+    const home = m.leftHome;
+    const reach = S(0.3, 0.44) * (1 - S(0.56, 0.68));
+    m.leftHand.position.copy(home).lerp(at, reach);
+    m.leftHand.rotation.set(0.2 * reach, 0, -0.3 * reach);
+    m.loader.visible = t < 0.62;
+    ev('out', 0.1, () => { this.hooks.audio?.play('cylOut'); this.rotKick.impulse(0.4, 0, -0.5); });
+    ev('dump', 0.22, () => { m.cases.visible = false; this.dropCasings(m, 6); this.hooks.audio?.play('casings'); });
+    ev('in', 0.52, () => {
+      m.cases.visible = true; m.loaderRounds.visible = false;
+      this.hooks.audio?.play('speedload'); this.posKick.impulse(0, 0.2, 0.1);
+      const take = Math.min(d.mag - w.mag, w.reserve); w.mag += take; w.reserve -= take; this.hooks.onAmmo?.();
+    });
+    ev('shut', 0.68, () => { this.hooks.audio?.play('cylIn'); this.rotKick.impulse(-1.2, 0.4, 1.2); this.posKick.impulse(0.1, 0.2, 0); });
+    if (t >= 1) { this.reload = null; this.resetReloadPose(); }
+  }
+  // brass falling out of the cylinder (view space)
+  dropCasings(m, n) {
+    this.root.updateMatrixWorld(true);
+    for (let i = 0; i < Math.max(1, n); i++) {
+      const s = this.shells[this.shellCursor++ % this.shells.length];
+      if (s.active) s.active.visible = false;
+      s.active = s.m; s.m.visible = true;
+      const ca = (i / 6) * Math.PI * 2;
+      const p = m.cylRear.clone().add(new THREE.Vector3(Math.sin(ca) * 0.0118, Math.cos(ca) * 0.0118, -0.01)).applyMatrix4(m.crane.matrix).applyMatrix4(m.root.matrixWorld);
+      s.m.position.copy(p);
+      s.vel.set(rand(-0.3, 0.1), rand(-0.6, -0.2), rand(0.2, 0.6));
+      s.spin.set(rand(-8, 8), rand(-8, 8), rand(-8, 8)); s.life = 0.8; s.m.rotation.set(0, Math.PI / 2, 0);
     }
   }
 

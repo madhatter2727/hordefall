@@ -3,6 +3,7 @@ import './style.css';
 import { Input } from './core/input.js';
 import { clamp, lerp, damp, rand, rayAABB } from './core/util.js';
 import { buildArena } from './world/arena.js';
+import { WallBuys } from './world/wallbuys.js';
 import { Barrels } from './world/barrels.js';
 import { makeSky, SUN_DIR } from './world/sky.js';
 import { Player } from './player.js';
@@ -86,10 +87,10 @@ class Game {
       muzzleWorld: (mw, def) => {
         this.fx.muzzle(this.muzzleNow); this.flushPellets();
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
-        this.fx.smoke(this.muzzleNow, fwd, def.id === 'sg' ? 1.6 : def.id === 'mr' ? 1.1 : 0.45);
+        this.fx.smoke(this.muzzleNow, fwd, def.smoke ?? (def.id === 'sg' ? 1.6 : def.id === 'mr' ? 1.1 : 0.45));
       },
       melee: () => this.melee(),
-      onFire: (def) => { this.crossKick = 1; this.shake(def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025); this.horde.alert(this.player.pos, def.id === 'mr' ? 42 : 34); },
+      onFire: (def) => { this.crossKick = 1; this.shake(def.shake ?? (def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025)); this.horde.alert(this.player.pos, def.id === 'mr' ? 42 : 34); },
       onAmmo: () => (this.hudDirty = true),
       onSwap: () => (this.hudDirty = true),
     });
@@ -107,6 +108,7 @@ class Game {
       onWaveEnd: (n) => this.onWaveEnd(n),
     });
 
+    this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
 
@@ -140,6 +142,7 @@ class Game {
     const dn = $('dmgnums'); dn.checked = this.dmgNumsOn; dn.onchange = () => { this.dmgNumsOn = dn.checked; localStorage.setItem('hf-dn', dn.checked ? '1' : '0'); };
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyP' && this.state === 'play') document.exitPointerLock();
+      if (e.code === 'KeyF' && this.state === 'play' && this.wallTarget) this.buy('gun:' + this.wallTarget.id);
       if (this.state === 'shop') {
         const k = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
         if (k >= 0) this.pickPerk(k);
@@ -305,6 +308,18 @@ class Game {
     if (this.state === 'shop') { this.renderBuys(); const nb = $('buys').querySelector(`[data-k="${key}"]`); nb?.classList.add('flash'); }
     return true;
   }
+  updateWallPrompt() {
+    const el = $('buyprompt');
+    const b = this.state === 'play' ? this.wallbuys.nearest(this.player.pos, this.camera.getWorldDirection(this._wbDir || (this._wbDir = new THREE.Vector3()))) : null;
+    this.wallTarget = b;
+    let html = '';
+    if (b) {
+      const owned = this.arsenal.owns(b.id), cost = owned ? Math.round(b.def.cost / 2) : b.def.cost;
+      const what = owned ? `${b.def.short} AMMO` : this.arsenal.weapons.length >= 3 ? `${b.def.name} <i>(swaps ${this.arsenal.current.def.short})</i>` : b.def.name;
+      html = `<kbd>F</kbd> BUY ${what} <span class="${this.pts >= cost ? 'ok' : 'no'}">${cost.toLocaleString()}</span>`;
+    }
+    if (el.innerHTML !== html) { el.innerHTML = html; el.classList.toggle('on', !!b); }
+  }
   readyUp() {
     if (this.state !== 'shop') return;
     this.state = 'play'; this.show(null);
@@ -373,7 +388,7 @@ class Game {
   splatter(point, dir, def, heavy) {
     if ((this.splatsThisShot = (this.splatsThisShot || 0) + 1) > (def.pellets > 1 ? 4 : 2)) return;
     const n = this.tmpN2 || (this.tmpN2 = new THREE.Vector3());
-    const big = heavy || def.id !== 'ar';
+    const big = heavy || !(def.id === 'ar' || def.id === 'smg');
     const wh = this.raycastWorld(point, dir, big ? 4.5 : 3, n);
     if (wh && n.y < 0.7) this.fx.splat.add(point.clone().addScaledVector(dir, wh.t), n.clone(), rand(0.45, 0.8) * (big ? 1.5 : 1) * (1 - wh.t / 6), dir, 1.4);
     if (Math.random() < (big ? 0.9 : 0.5)) {
@@ -387,7 +402,7 @@ class Game {
   killFx(h, dir, def, res) {
     const e = h.e; if (e.type.hue) return;
     const dist = h.point.distanceTo(this.camera.position);
-    const violent = (def.id === 'sg' && dist < 7) || (def.id === 'mr' && (res.head || dist < 12)) || def.id === 'melee' || e.type.boss;
+    const violent = (def.id === 'sg' && dist < 7) || ((def.id === 'mr' || def.id === 'rv') && (res.head || dist < 12)) || def.id === 'melee' || e.type.boss;
     if (violent) {
       const g = this.horde.groundAt(h.point.x, h.point.z, h.point.y);
       this.fx.gib(h.point, dir, e.type.boss ? 16 : res.head ? 7 : 9, g);
@@ -534,13 +549,15 @@ class Game {
     if (this.state === 'play') this.camera.fov = damp(this.camera.fov, targetFov, ads > 0 && ads < 1 ? 40 : 14, dt);
     this.vmCamera.fov = lerp(VM_HIP_FOV, d.vmAdsFov, ads);
     // when aiming, clip the stock/buffer tube right under the eye so it never fills the bottom of the screen
-    this.vmCamera.near = lerp(0.01, d.id === 'ar' ? 0.1 : d.id === 'sg' ? 0.1 : 0.095, ads * ads);
+    this.vmCamera.near = lerp(0.01, d.adsNear ?? (d.id === 'ar' ? 0.1 : d.id === 'sg' ? 0.1 : 0.095), ads * ads);
     this.camera.updateProjectionMatrix(); this.vmCamera.updateProjectionMatrix();
     this.placeCamera(dt);
 
     if (active) {
       this.horde.update(worldDt, this.time, this.camera);
       this.barrels.update(worldDt, this.fx, (p) => this.explode(p, 1));
+      this.wallbuys.update(this.time);
+      this.updateWallPrompt();
       this.fx.update(worldDt, this.camera, this.time);
     }
     // lights
