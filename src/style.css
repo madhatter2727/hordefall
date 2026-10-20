@@ -199,3 +199,7 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 #lb-note { font-size: 12px; letter-spacing: .15em; opacity: .45; margin-top: 10px; text-align: center; }
 .lb-head { display: grid; grid-template-columns: 34px 58px 1fr 54px 64px; gap: 6px; font-size: 11px; letter-spacing: .25em; opacity: .4; padding: 0 4px 4px; }
 @media (max-width: 860px) { .go { grid-template-columns: 1fr; gap: 18px; } .go-right { min-height: 0; } }
+/* keep the whole intermission on screen on short laptop displays */
+@media (max-height: 860px) { .shop { zoom: .88; } }
+@media (max-height: 760px) { .shop { zoom: .78; } }
+@media (max-height: 640px) { .shop { zoom: .66; } }
