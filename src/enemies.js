@@ -105,6 +105,17 @@ function huskMaterial(char, ember) {
   return m;
 }
 
+function huskDepthMaterial() {
+  const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float iDissolve; varying float vDissolve;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDissolve = iDissolve;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vDissolve;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vDissolve > 0.001) discard;');
+  };
+  return m;
+}
+
 const tmpM = new THREE.Matrix4(), tX = new THREE.Vector3(), tY = new THREE.Vector3(), tZ = new THREE.Vector3(), tS = new THREE.Vector3();
 
 export class Horde {
@@ -114,6 +125,7 @@ export class Horde {
     this.max = 72;
     const char = charTexture(), ember = emberTexture();
     this.material = huskMaterial(char, ember);
+    this.depthMat = huskDepthMaterial();
     this.parts = PARTS.map(([name, a, b, r, kind]) => {
       const geo = partGeometry(name, r);
       const mk = (n) => new THREE.InstancedBufferAttribute(new Float32Array(this.max).fill(n), 1).setUsage(THREE.DynamicDrawUsage);
@@ -122,6 +134,7 @@ export class Horde {
       const mesh = new THREE.InstancedMesh(geo, this.material, this.max);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0;
+      mesh.customDepthMaterial = this.depthMat;
       mesh.setColorAt(0, new THREE.Color(1, 1, 1));
       scene.add(mesh);
       return { name, a, b, r, kind, mesh, flash, diss, heat, len: LEN[name.replace(/[LR]$/, '')] };
@@ -134,7 +147,7 @@ export class Horde {
     this.flowT = 0;
     this.hash = new Map();
     this.wave = 0; this.toSpawn = 0; this.spawnT = 0; this.intermission = 0; this.running = false;
-    this.growlT = 0; this.alertT = 0;
+    this.growlT = 0; this.alertT = 0; this.screamT = 0;
   }
 
   // ---------------------------------------------------------------- waves
@@ -153,9 +166,35 @@ export class Horde {
     this.toSpawn = n; this.waveTotal = n; this.spawnT = 0.5;
     this.hooks.onWaveStart?.(this.wave, n);
   }
-  alert() { this.alertT = 2; }
+  // gunfire wakes idle husks within earshot (closer ones react first)
+  alert(pos, radius = 34) {
+    for (const e of this.enemies) {
+      if (e.dead || e.aware) continue;
+      const d = e.pos.distanceTo(pos);
+      if (d < radius) e.alertIn = Math.min(e.alertIn ?? 9, 0.12 + d / 70 + rand(0, 0.2));
+    }
+  }
+  wake(e) {
+    if (e.aware) return;
+    e.aware = true; e.alertIn = undefined; e.flinchV -= 4; e.stagger = Math.max(e.stagger, 0.12);
+    if (this.screamT <= 0) { this.hooks.audio.play('scream', this.spatial(e)); this.screamT = 0.25; }
+  }
+  // quick melee: nearest husk in a short cone in front of the player
+  meleeHit(o, f, range) {
+    let best = null, bd = range;
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const c = e.joints[J.chest].clone().lerp(e.joints[J.pelvis], 0.3);
+      const v = c.clone().sub(o); const d = v.length();
+      if (d > range + 0.3 * e.scale) continue;
+      v.normalize();
+      if (v.dot(f) < 0.55 && d > 0.9) continue;
+      if (d < bd + 0.3 * e.scale) { bd = d; best = { e, t: d, point: c }; }
+    }
+    return best;
+  }
 
-  spawn(typeKey, at) {
+  spawn(typeKey, at, idle = false) {
     const T = TYPES[typeKey];
     const e = this.pool.pop() || { joints: Array.from({ length: NJ }, () => new THREE.Vector3()), prev: Array.from({ length: NJ }, () => new THREE.Vector3()), pos: new THREE.Vector3(), vel: new THREE.Vector3(), kb: new THREE.Vector3(), gatePt: new THREE.Vector3() };
     e.type = T; e.key = typeKey;
@@ -171,6 +210,7 @@ export class Horde {
     e.armHeight = rand(0.75, 1.25);
     e.heat = T.heat * rand(0.8, 1.2);
     e.lastHit = -1; e.rest = {}; e.pooled = false; e.near = null;
+    e.aware = !idle; e.alertIn = undefined; e.wander = new THREE.Vector3(rand(-28, 28), 0, rand(-28, 28)); e.wanderT = rand(4, 9);
     // walk in through the nearest gate
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
     e.gatePt.copy(g); e.outside = Math.max(Math.abs(at.x), Math.abs(at.z)) > ARENA.half - 2;
@@ -178,12 +218,12 @@ export class Horde {
     this.enemies.push(e);
     return e;
   }
-  debugSpawn(n, dist = 14) {
+  debugSpawn(n, dist = 14, idle = false) {
     const P = this.player.pos;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + rand(-0.2, 0.2), d = dist + rand(-2, 3);
       const x = clamp(P.x + Math.sin(a) * d, -34, 34), z = clamp(P.z + Math.cos(a) * d, -34, 34);
-      this.spawn(i % 7 === 6 ? 'brute' : 'runner', new THREE.Vector3(x, this.groundAt(x, z, 10), z));
+      this.spawn(i % 7 === 6 ? 'brute' : 'runner', new THREE.Vector3(x, this.groundAt(x, z, 10), z), idle);
     }
   }
 
@@ -272,13 +312,14 @@ export class Horde {
   damage(e, amount, part, point, dir, def) {
     if (e.dead) return { killed: false };
     e.hp -= amount; e.flash = 1; e.lastHit = performance.now();
+    if (!e.aware) this.wake(e);
     const T = e.type, big = def.id !== 'ar';
     this.hooks.fx.bloodHit(point, dir, big || part === 'head');
     const dist = point.distanceTo(this.player.pos);
     this.hooks.audio.play('flesh', { gain: clamp(8 / (dist + 3), 0.2, 1) });
     // stagger + knockback (heavier enemies resist)
     const imp = (amount / 30) / T.mass;
-    e.kb.addScaledVector(new THREE.Vector3(dir.x, 0, dir.z).normalize(), Math.min(6, imp * (def.id === 'sg' ? 1.6 : 1.1)));
+    e.kb.addScaledVector(new THREE.Vector3(dir.x, 0, dir.z).normalize(), Math.min(def.knock ? 9 : 6, imp * (def.knock ?? (def.id === 'sg' ? 1.6 : 1.1))));
     e.stagger = Math.max(e.stagger, Math.min(0.55, 0.12 + imp * 0.25));
     // flinch: torso jerks back, head snaps
     const local = Math.sin(e.yaw) * dir.x + Math.cos(e.yaw) * dir.z; // + when shot from behind
@@ -327,7 +368,7 @@ export class Horde {
           const brute = this.brutesLeft > 0 && Math.random() < this.brutesLeft / this.toSpawn + 0.05;
           if (brute) this.brutesLeft--;
           const at = sp.clone().add(new THREE.Vector3(rand(-2.5, 2.5), 0, rand(-2.5, 2.5)));
-          this.spawn(brute ? 'brute' : 'runner', at);
+          this.spawn(brute ? 'brute' : 'runner', at, !brute && Math.random() < 0.25);
           this.toSpawn--;
           this.spawnT = Math.max(0.12, 0.55 - this.wave * 0.035) * rand(0.5, 1.5);
         }
@@ -342,22 +383,32 @@ export class Horde {
       const k = (Math.floor(e.pos.x / 2) + 64) * 256 + Math.floor(e.pos.z / 2) + 64;
       let b = this.hash.get(k); if (!b) this.hash.set(k, (b = [])); b.push(e);
     }
-    this.growlT -= dt; this.alertT -= dt;
+    this.growlT -= dt; this.alertT -= dt; this.screamT -= dt;
     const dir = new THREE.Vector3(), toP = new THREE.Vector3(), sep = new THREE.Vector3();
     for (const e of this.enemies) {
       if (e.dead) { this.updateRagdoll(e, dt); continue; }
       const T = e.type;
       toP.copy(P.pos).sub(e.pos); const dy = toP.y; toP.y = 0;
       const dist = toP.length(); toP.divideScalar(dist || 1);
+      // idle husks shamble between random points until they see/hear the player
+      if (!e.aware) {
+        if (e.alertIn !== undefined) { e.alertIn -= dt; if (e.alertIn <= 0) this.wake(e); }
+        if (dist < 11 && Math.abs(dy) < 3) this.wake(e);
+      }
       // steering
-      if (e.outside) {
+      if (!e.aware && !e.outside) {
+        e.wanderT -= dt;
+        dir.copy(e.wander).sub(e.pos).setY(0);
+        if (dir.length() < 1.5 || e.wanderT <= 0) { e.wander.set(rand(-28, 28), 0, rand(-28, 28)); e.wanderT = rand(4, 9); }
+        dir.normalize();
+      } else if (e.outside) {
         dir.copy(e.gatePt).sub(e.pos).setY(0);
         if (dir.length() < 1.2) e.outside = false;
         dir.normalize();
       } else if (dist < 4.5 && Math.abs(dy) < 1.2) dir.copy(toP);
       else if (!this.flowDir(e, dir)) dir.copy(toP);
       // flank: bend the approach sideways when far, converge when close
-      if (!e.outside && dist > 7) {
+      if (e.aware && !e.outside && dist > 7) {
         const f = e.flank * clamp((dist - 7) / 12, 0, 1);
         const c = Math.cos(f), s = Math.sin(f); dir.set(dir.x * c - dir.z * s, 0, dir.x * s + dir.z * c);
       }
@@ -375,12 +426,12 @@ export class Horde {
       }
       dir.addScaledVector(sep, 1.6);
       // stop at melee range
-      let want = e.speed;
-      if (dist < T.reach * 0.75 && Math.abs(dy) < 1.2) want = 0;
+      let want = e.aware ? e.speed : e.speed * 0.2;
+      if (e.aware && dist < T.reach * 0.75 && Math.abs(dy) < 1.2) want = 0;
       if (e.stagger > 0) { want *= 0.15; e.stagger -= dt; }
       if (e.attackT >= 0) want *= 0.35;
       // brutes charge when close
-      if (T.brute && dist < 10 && dist > 3) want *= 1.8;
+      if (e.aware && T.brute && dist < 10 && dist > 3) want *= 1.8;
       const dl = dir.length(); if (dl > 0) dir.divideScalar(Math.max(1, dl));
       const acc = e.grounded ? 9 : 1.5;
       e.vel.x = damp(e.vel.x, dir.x * want, acc, dt); e.vel.z = damp(e.vel.z, dir.z * want, acc, dt);
@@ -393,20 +444,20 @@ export class Horde {
       e.vy -= 18 * dt; e.pos.y += e.vy * dt;
       if (e.pos.y <= g) { if (!e.grounded && e.vy < -4) e.stagger = 0.15; e.pos.y = g; e.vy = 0; e.grounded = true; } else if (e.pos.y > g + 0.05) e.grounded = false;
       e.leapCd -= dt;
-      if (e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.brute) {
+      if (e.aware && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.brute) {
         e.vy = Math.sqrt(2 * 18 * (dy + 0.9)); e.leapCd = 2.2;
         const tt = e.vy / 18 * 1.6; e.vel.copy(toP).multiplyScalar(Math.min(9, dist / tt + 1)); e.grounded = false;
         this.hooks.audio.play('growl', this.spatial(e, { brute: false }));
       }
       // facing + gait
       const sp = Math.hypot(e.vel.x, e.vel.z); e.speedNow = sp;
-      const faceYaw = dist < 6 ? Math.atan2(toP.x, toP.z) : sp > 0.3 ? Math.atan2(e.vel.x, e.vel.z) : e.yaw;
+      const faceYaw = e.aware && dist < 6 ? Math.atan2(toP.x, toP.z) : sp > 0.3 ? Math.atan2(e.vel.x, e.vel.z) : e.yaw;
       let dyaw = faceYaw - e.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
       e.yaw += dyaw * (1 - Math.exp(-10 * dt));
       e.phase += dt * (sp * (T.brute ? 1.5 : 2.05) / e.scale + 0.5);
       // attack
       e.attackCd -= dt;
-      if (e.attackT < 0 && e.attackCd <= 0 && dist < T.reach && Math.abs(dy) < 1.3 && P.alive) {
+      if (e.aware && e.attackT < 0 && e.attackCd <= 0 && dist < T.reach && Math.abs(dy) < 1.3 && P.alive) {
         e.attackT = 0; this.hooks.audio.play('growl', this.spatial(e, { brute: T.brute }));
       }
       if (e.attackT >= 0) {

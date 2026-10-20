@@ -5,7 +5,7 @@ import { Spring3, clamp, damp, lerp, rand, randSign, smooth, easeInOut } from '.
 
 const DEG = Math.PI / 180;
 const POSES = {
-  ar: { hip: new THREE.Vector3(0.112, -0.096, -0.31), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.17) },
+  ar: { hip: new THREE.Vector3(0.105, -0.088, -0.3), hipRot: new THREE.Euler(0.0, 0.04, 0.03), ads: new THREE.Vector3(0, 0, -0.17) },
   sg: { hip: new THREE.Vector3(0.115, -0.095, -0.32), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
   mr: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.2) },
 };
@@ -33,6 +33,18 @@ function sideFlameTexture() {
   ctx.beginPath(); ctx.moveTo(32, 256); ctx.quadraticCurveTo(64, 120, 32, 0); ctx.quadraticCurveTo(0, 120, 32, 256); ctx.fill();
   return new THREE.CanvasTexture(c);
 }
+
+// keyframe track: keys = [[t, x, y, z], ...]; smooth interpolation between keys
+const _kv = new THREE.Vector3();
+function track(keys, t, out = _kv) {
+  if (t <= keys[0][0]) return out.set(keys[0][1], keys[0][2], keys[0][3]);
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t < b[0]) { const k = smooth((t - a[0]) / (b[0] - a[0])); return out.set(lerp(a[1], b[1], k), lerp(a[2], b[2], k), lerp(a[3], b[3], k)); }
+  }
+  const l = keys[keys.length - 1]; return out.set(l[1], l[2], l[3]);
+}
+const k3 = (t, v) => [t, v.x, v.y, v.z];
 
 export class Arsenal {
   constructor(vmCamera, hooks) {
@@ -95,7 +107,8 @@ export class Arsenal {
 
   select(i) {
     if (i === this.index || this.swap || i < 0 || i >= this.weapons.length) return;
-    this.reload = null;
+    if (this.reload) this.resetReloadPose();
+    this.reload = null; this.melee = null;
     this.swap = { t: 0, to: i, switched: false };
     this.hooks.audio?.play('swap');
   }
@@ -126,9 +139,15 @@ export class Arsenal {
     if (input.hit('Digit3')) this.select(2);
     if (input.mouse.wheel) this.select((this.index + (input.mouse.wheel > 0 ? 1 : -1) + 3) % 3);
     if (input.hit('KeyR')) this.startReload();
+    if (input.hit('KeyV') && !this.melee && !this.swap) {
+      this.melee = { t: 0, hit: false };
+      if (this.reload && this.reload.kind === 'shells') this.reload = null;
+      else if (this.reload && this.reload.t < 0.55) { this.resetReloadPose(); this.reload = null; }
+      this.hooks.audio?.play('swing', { gain: 0.8 });
+    }
 
     // ---- ADS ----
-    const canAds = !this.swap && !(this.reload && this.reload.kind === 'mag' && this.reload.t < 0.85);
+    const canAds = !this.swap && !this.melee && !(this.reload && this.reload.kind === 'mag' && this.reload.t < 0.85);
     this.adsTarget = input.mouse.right && canAds ? 1 : 0;
     const adsSpeed = 1 / d.adsTime;
     this.ads = clamp(this.ads + Math.sign(this.adsTarget - this.ads) * adsSpeed * dt, 0, 1);
@@ -148,7 +167,7 @@ export class Arsenal {
     this.firing = false;
     if (trigger && sprinting) this.blockSprint = 0.35;
     this.blockSprint = Math.max(0, (this.blockSprint || 0) - dt);
-    if (trigger && !this.swap && this.sprintOut <= 0.0 && this.cooldown <= 0) {
+    if (trigger && !this.swap && !this.melee && this.sprintOut <= 0.0 && this.cooldown <= 0) {
       if (this.reload && d.pump && w.mag > 0) this.reload = null; // shotgun: fire interrupts reload
       if (!this.reload) {
         if (w.mag > 0) { this.fire(player, camera); this.buffered = 0; }
@@ -166,6 +185,7 @@ export class Arsenal {
     const anim = { pos: new THREE.Vector3(), rot: new THREE.Vector3() };
     this.updateReload(dt, anim);
     this.updateSwap(dt, anim);
+    this.updateMelee(dt, anim);
     if (d.pump) {
       this.pumpT = Math.min(1, this.pumpT + dt / (60 / d.rpm * 0.85));
       const p = this.pumpT, back = p < 0.2 ? 0 : p < 0.5 ? smooth((p - 0.2) / 0.3) : p < 0.82 ? 1 - smooth((p - 0.5) / 0.32) : 0;
@@ -214,6 +234,7 @@ export class Arsenal {
     const kp = this.posKick.update(dt), kr = this.rotKick.update(dt);
     pos.add(kp); rot.x += kr.x * lerp(1, 0.35, a); rot.y += kr.y * lerp(1, 0.4, a); rot.z += kr.z * lerp(1, 0.5, a);
     pos.add(anim.pos); rot.add(anim.rot);
+    if (this.dbgPose) { pos.add(this.dbgPose.p); rot.add(this.dbgPose.r); }
     this.root.position.copy(pos);
     this.root.rotation.set(rot.x, rot.y, rot.z, 'YXZ');
     this.camKick.update(dt);
@@ -318,65 +339,109 @@ export class Arsenal {
     }
   }
 
+  resetReloadPose() {
+    const m = this.current.model;
+    if (m.magHome) { m.mag.position.copy(m.magHome); m.mag.rotation.x = this.current.def.id === 'mr' ? 0.03 : 0; m.mag.visible = true; }
+    if (m.bolt) m.bolt.position.z = 0;
+    m.leftHand.position.copy(m.leftHome); m.leftHand.rotation.set(0, 0, 0);
+    if (m.shell) m.shell.visible = false;
+  }
   updateReload(dt, anim) {
     const r = this.reload; if (!r) return;
     const w = this.current, d = w.def, m = w.model;
     if (r.kind === 'mag') {
       r.t += dt / r.dur;
+      if (this.freezeT !== undefined) r.t = this.freezeT;
       const t = r.t, ev = (name, at, fn) => { if (t >= at && !r.events.has(name)) { r.events.add(name); fn(); } };
-      const tiltIn = smooth(clamp(t / 0.14, 0, 1)), tiltOut = smooth(clamp((t - (r.empty ? 0.86 : 0.8)) / 0.14, 0, 1));
-      const tilt = tiltIn * (1 - tiltOut);
-      anim.rot.z -= 0.55 * tilt; anim.rot.x += 0.16 * tilt; anim.rot.y -= 0.12 * tilt; anim.pos.y -= 0.03 * tilt; anim.pos.x -= 0.03 * tilt; anim.pos.z += 0.03 * tilt;
-      const home = m.magHome;
-      // mag out (0.14-0.3) and new mag in (0.4-0.6)
-      let my = 0, mz = 0, rx = 0;
-      if (t > 0.14 && t < 0.36) { const k = (t - 0.14) / 0.22; my = -0.38 * k * k; rx = -0.4 * k; }
-      else if (t >= 0.36 && t < 0.62) { const k = smooth((t - 0.36) / 0.26); my = -0.3 * (1 - k); mz = 0.04 * (1 - k); rx = -0.3 * (1 - k); }
-      m.mag.position.set(home.x, home.y + my, home.z + mz); m.mag.rotation.x = (d.id === 'mr' ? 0.06 : 0) + rx;
-      // left hand goes to fetch the mag
-      const lh = m.leftHand, lHome = m.leftHome;
-      const fetch = t > 0.28 && t < 0.68 ? Math.sin(((t - 0.28) / 0.4) * Math.PI) : 0;
-      lh.position.set(lHome.x + 0.01 * fetch, lHome.y - 0.17 * fetch, lHome.z + (0.24 + (d.id === 'mr' ? 0.03 : 0)) * fetch);
-      ev('out', 0.16, () => this.hooks.audio?.play('magOut'));
+      const E = r.empty;
+      // whole-gun choreography: cant toward the camera, roll back for the charging handle
+      // raise the gun and turn its left side (magwell) toward the eye
+      const tilt = (this.dbgPose ? 0 : 1) * smooth(clamp(t / 0.1, 0, 1)) * (1 - smooth(clamp((t - (E ? 0.86 : 0.74)) / 0.13, 0, 1)));
+      anim.rot.z -= 0.6 * tilt; anim.rot.x += 0.12 * tilt; anim.rot.y += 0.05 * tilt;
+      anim.pos.y += 0.05 * tilt; anim.pos.x -= 0.05 * tilt;
+      if (E) { const c = smooth(clamp((t - 0.64) / 0.06, 0, 1)) * (1 - smooth(clamp((t - 0.82) / 0.08, 0, 1))); anim.rot.z += 0.3 * c; anim.rot.y -= 0.2 * c; anim.rot.x -= 0.12 * c; anim.pos.y -= 0.01 * c; }
+      // magazine path (offset from its seated position)
+      const magKeys = [[0, 0, 0, 0], [0.13, 0, 0, 0], [0.17, 0, -0.012, 0.002], [0.3, 0, -0.24, 0.16], [0.38, 0, -0.3, 0.2], [0.53, 0, -0.05, 0.012], [0.6, 0, 0, 0]];
+      const mo = track(magKeys, t, new THREE.Vector3());
+      m.mag.position.copy(m.magHome).add(mo);
+      m.mag.rotation.x = (d.id === 'mr' ? 0.03 : 0) + track([[0, 0, 0, 0], [0.17, 0, 0, 0], [0.3, -0.7, 0, 0], [0.38, -0.55, 0, 0], [0.53, -0.1, 0, 0], [0.6, 0, 0, 0]], t).x;
+      m.mag.visible = t < 0.3 || t >= 0.38;
+      // left hand: grab the mag, strip it, fetch a new one, seat + slap, (empty) rack the charging handle
+      const home = m.leftHome, grab = m.points.magBottom.clone().add(new THREE.Vector3(0.004, 0.034, 0.004)).sub(home);
+      let hand;
+      if (t < 0.13) hand = grab.clone().multiplyScalar(smooth(t / 0.13));
+      else if (t < 0.6) hand = grab.clone().add(mo);
+      else if (t < 0.64) hand = grab.clone().add(new THREE.Vector3(0, 0.012 * Math.sin(((t - 0.6) / 0.04) * Math.PI), 0));
+      else if (E) {
+        const ch = m.points.charge.clone().sub(home);
+        hand = track([k3(0.64, grab), k3(0.71, ch), k3(0.74, ch), k3(0.79, ch.clone().add(new THREE.Vector3(0, 0, 0.055))), k3(0.82, ch.clone().add(new THREE.Vector3(0, -0.02, 0.06))), [0.95, 0, 0, 0]], t, new THREE.Vector3());
+      } else hand = track([k3(0.64, grab), [0.8, 0, 0, 0]], t, new THREE.Vector3());
+      m.leftHand.position.copy(home).add(hand);
+      const gr = t < 0.13 ? smooth(t / 0.13) : t < 0.64 ? 1 : E ? 0 : 1 - smooth(clamp((t - 0.64) / 0.16, 0, 1));
+      const cr = E ? smooth(clamp((t - 0.64) / 0.07, 0, 1)) * (1 - smooth(clamp((t - 0.82) / 0.13, 0, 1))) : 0;
+      const CR = m.points.chargeRot;
+      m.leftHand.rotation.set(0.25 * gr + CR.x * cr, 0.1 * gr + CR.y * cr, -0.45 * gr + CR.z * cr);
+      if (E) m.bolt.position.z = track([[0.74, 0, 0, 0], [0.79, 0.055, 0, 0], [0.8, 0.055, 0, 0], [0.812, 0, 0, 0]], t).x;
+      ev('out', 0.17, () => { this.hooks.audio?.play('magOut'); this.rotKick.impulse(0.3, 0, -0.4); });
       ev('in', 0.6, () => {
-        this.hooks.audio?.play('magIn'); this.posKick.impulse(0, 0.25, 0); this.rotKick.impulse(-0.8, 0, -0.6);
-        const need = d.mag - w.mag + (r.empty ? 0 : 0), take = Math.min(need, w.reserve);
-        w.mag += take; w.reserve -= take; this.hooks.onAmmo?.();
+        this.hooks.audio?.play('magIn'); this.posKick.impulse(0, 0.32, 0); this.rotKick.impulse(-1.0, 0, -0.7);
+        const take = Math.min(d.mag - w.mag, w.reserve); w.mag += take; w.reserve -= take; this.hooks.onAmmo?.();
       });
-      if (r.empty) {
-        const b = t > 0.7 && t < 0.8 ? smooth((t - 0.7) / 0.1) : 0;
-        m.bolt.position.z = b * 0.055;
-        if (t > 0.68 && t < 0.84) { anim.rot.z += 0.12; anim.pos.x += 0.01; }
-        ev('bolt', 0.8, () => { this.hooks.audio?.play('bolt'); this.rotKick.impulse(1.2, 0.3, 0.5); this.posKick.impulse(0, 0.1, 0.4); });
+      if (E) {
+        ev('pull', 0.75, () => this.hooks.audio?.play('pumpBack'));
+        ev('bolt', 0.8, () => { this.hooks.audio?.play('bolt'); this.rotKick.impulse(1.4, 0.3, 0.6); this.posKick.impulse(0, 0.12, 0.45); });
       }
-      if (t >= 1) { this.reload = null; m.mag.position.copy(home); m.bolt.position.z = 0; lh.position.copy(lHome); }
+      if (t >= 1) { this.reload = null; this.resetReloadPose(); }
     } else {
-      // shotgun: start, one shell per cycle, end
+      // shotgun: tilt in, one shell per cycle (hand: caddy -> under the loading port -> thumb it in), tilt out
       r.phaseT += dt;
-      const tilt = r.phase === 'start' ? smooth(clamp(r.phaseT / d.reloadStart, 0, 1)) : r.phase === 'end' ? 1 - smooth(clamp(r.phaseT / d.reloadEnd, 0, 1)) : 1;
-      anim.rot.z -= 0.42 * tilt; anim.rot.x += 0.14 * tilt; anim.pos.y -= 0.02 * tilt; anim.pos.x -= 0.02 * tilt;
-      const lh = m.leftHand, lHome = m.leftHome, shell = m.shell;
-      if (r.phase === 'start' && r.phaseT >= d.reloadStart) { r.phase = 'shell'; r.phaseT = 0; }
-      if (r.phase === 'shell') {
+      if (this.freezeK !== undefined) { r.phase = 'shell'; r.phaseT = this.freezeK * d.reloadShell; r.inserted = true; }
+      const tilt = (this.dbgPose ? 0 : 1) * (r.phase === 'start' ? smooth(clamp(r.phaseT / d.reloadStart, 0, 1)) : r.phase === 'end' ? 1 - smooth(clamp(r.phaseT / d.reloadEnd, 0, 1)) : 1);
+      anim.rot.z -= 0.8 * tilt; anim.rot.x += 0.1 * tilt; anim.rot.y += 0.05 * tilt; anim.pos.y += 0.05 * tilt; anim.pos.x -= 0.05 * tilt;
+      const lh = m.leftHand, home = m.leftHome, shell = m.shell;
+      const caddy = m.points.caddy.clone().sub(home), port = m.points.port.clone().add(new THREE.Vector3(0.0, 0.0, 0.035)).sub(home);
+      const below = port.clone().add(new THREE.Vector3(0.01, -0.045, 0.02)), pushed = port.clone().add(new THREE.Vector3(0, 0.008, -0.01));
+      const rot = new THREE.Vector3(0.3, 0.0, -0.75);
+      let hand, rk = 1;
+      if (r.phase === 'start') { const k = clamp(r.phaseT / d.reloadStart, 0, 1); hand = caddy.clone().multiplyScalar(smooth(k)); rk = smooth(k); shell.visible = false; }
+      else if (r.phase === 'shell') {
         const k = clamp(r.phaseT / d.reloadShell, 0, 1);
-        const dip = Math.sin(k * Math.PI);
-        lh.position.set(lHome.x + 0.01 * dip, lHome.y - 0.06 * dip, lHome.z + 0.2 * dip);
-        shell.visible = k > 0.2 && k < 0.75;
-        shell.position.set(0, -0.11 + 0.03 * smooth(clamp((k - 0.2) / 0.5, 0, 1)), -0.12 + 0.04 * k);
-        if (k > 0.62 && !r.inserted) {
+        hand = track([k3(0, caddy), k3(0.35, below), k3(0.58, port), k3(0.7, pushed), k3(1, caddy)], k, new THREE.Vector3());
+        shell.visible = k > 0.04 && k < 0.7;
+        // shell rides between thumb and fingers, then slides up and forward into the tube
+        const ins = smooth(clamp((k - 0.58) / 0.12, 0, 1));
+        shell.position.copy(m.pump.position).add(home).add(hand).add(new THREE.Vector3(-0.004, 0.03 + 0.006 * ins, -0.03 - 0.03 * ins));
+        shell.rotation.set(0.08 * (1 - ins), 0, 0);
+        if (k > 0.66 && !r.inserted) {
           r.inserted = true; w.mag++; w.reserve--; this.hooks.onAmmo?.();
-          this.hooks.audio?.play('shellIn'); this.posKick.impulse(0, 0.12, 0.12); this.rotKick.impulse(-0.4, 0, -0.3);
+          this.hooks.audio?.play('shellIn'); this.posKick.impulse(0, 0.14, 0.12); this.rotKick.impulse(-0.5, 0, -0.35);
         }
         if (k >= 1) {
           r.phaseT = 0; r.inserted = false;
-          if (w.mag >= d.mag || w.reserve <= 0) { r.phase = 'end'; shell.visible = false; lh.position.copy(lHome); }
+          if (w.mag >= d.mag || w.reserve <= 0) { r.phase = 'end'; shell.visible = false; }
         }
-      }
+      } else { const k = clamp(r.phaseT / d.reloadEnd, 0, 1); hand = caddy.clone().multiplyScalar(1 - smooth(k)); rk = 1 - smooth(k); }
+      lh.position.copy(home).add(hand);
+      lh.rotation.set(rot.x * rk, rot.y * rk, rot.z * rk);
+      if (r.phase === 'start' && r.phaseT >= d.reloadStart) { r.phase = 'shell'; r.phaseT = 0; }
       if (r.phase === 'end' && r.phaseT >= d.reloadEnd) {
-        this.reload = null; lh.position.copy(lHome);
+        this.reload = null; this.resetReloadPose();
         if (r.empty) { this.pumpT = 0; this.pumpBack = false; this.pumpFwd = true; }
       }
     }
+  }
+
+  // quick melee: rifle-butt/side swing across the screen; damage is dealt by hooks.melee at the strike frame
+  updateMelee(dt, anim) {
+    const me = this.melee; if (!me) return;
+    me.t += dt;
+    const t = me.t;
+    const p = track([[0, 0, 0, 0], [0.09, 0.045, 0.012, 0.05], [0.19, -0.14, 0.035, -0.11], [0.26, -0.13, 0.03, -0.1], [0.55, 0, 0, 0]], t, new THREE.Vector3());
+    const r = track([[0, 0, 0, 0], [0.09, 0.05, -0.3, -0.2], [0.19, -0.16, 0.8, 0.5], [0.26, -0.14, 0.75, 0.45], [0.55, 0, 0, 0]], t, new THREE.Vector3());
+    anim.pos.add(p); anim.rot.add(r);
+    if (!me.kicked && t > 0.1) { me.kicked = true; this.camKick.impulse(-1.2, 4.5, 5); }
+    if (!me.hit && t > 0.16) { me.hit = true; this.hooks.melee?.(); }
+    if (t > 0.55) this.melee = null;
   }
 
   updateSwap(dt, anim) {
@@ -401,5 +466,5 @@ export class Arsenal {
   }
 
   refill() { for (const w of this.weapons) w.reserve = w.def.reserve; this.hooks.onAmmo?.(); }
-  resetAll() { for (const w of this.weapons) { w.mag = w.def.mag; w.reserve = w.def.reserve; } this.reload = null; this.aimRecoil.pitch = this.aimRecoil.yaw = 0; }
+  resetAll() { for (const w of this.weapons) { w.mag = w.def.mag; w.reserve = w.def.reserve; } if (this.reload) this.resetReloadPose(); this.reload = null; this.melee = null; this.aimRecoil.pitch = this.aimRecoil.yaw = 0; }
 }

@@ -187,6 +187,14 @@ export class Effects {
   }
 
   muzzle(pos) { this.muzzleLight.position.copy(pos); this.flashT = 0.05; }
+  // lingering muzzle smoke drifting forward and up
+  smoke(pos, dir, amount = 1) {
+    const n = Math.round(2 + amount * 3);
+    for (let i = 0; i < n; i++) {
+      const v = dir.clone().multiplyScalar(rand(0.4, 1.6) * amount).add(new THREE.Vector3(rand(-0.25, 0.25), rand(0.15, 0.5), rand(-0.25, 0.25)));
+      this.alpha.spawn({ pos: pos.clone().addScaledVector(dir, rand(0.05, 0.4)), vel: v, life: rand(0.9, 1.8), size: rand(0.05, 0.1), grow: rand(0.35, 0.7) * (0.6 + amount * 0.4), col: new THREE.Color(0.42, 0.41, 0.42), alpha: 0.16 + amount * 0.06, drag: 2.2, grav: -0.35 });
+    }
+  }
 
   // surface impact: sparks + dust + decal
   impact(point, normal, mat) {

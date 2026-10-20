@@ -12,7 +12,7 @@ function tex(c, srgb = true, repeat = 1) {
 }
 
 // value noise for canvases
-function noiseField(w, h, scale, seed, octaves = 4) {
+export function noiseField(w, h, scale, seed, octaves = 4) {
   const r = mulberry(seed);
   const gw = Math.ceil(w / scale) + 2, gh = Math.ceil(h / scale) + 2;
   const layers = [];
@@ -39,7 +39,7 @@ function noiseField(w, h, scale, seed, octaves = 4) {
   return out;
 }
 
-function normalFromHeight(hf, w, h, strength) {
+export function normalFromHeight(hf, w, h, strength) {
   const [c, ctx] = canvas(w, h);
   const img = ctx.createImageData(w, h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {

@@ -76,8 +76,13 @@ class Game {
     this.arsenal = new Arsenal(this.vmCamera, {
       audio: this.audio,
       shoot: (o, d, def, first) => this.shoot(o, d, def, first),
-      muzzleWorld: () => { this.fx.muzzle(this.muzzleNow); this.flushPellets(); },
-      onFire: (def) => { this.crossKick = 1; this.shake(def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025); this.horde.alert(this.player.pos); },
+      muzzleWorld: (mw, def) => {
+        this.fx.muzzle(this.muzzleNow); this.flushPellets();
+        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
+        this.fx.smoke(this.muzzleNow, fwd, def.id === 'sg' ? 1.6 : def.id === 'mr' ? 1.1 : 0.45);
+      },
+      melee: () => this.melee(),
+      onFire: (def) => { this.crossKick = 1; this.shake(def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025); this.horde.alert(this.player.pos, def.id === 'mr' ? 42 : 34); },
       onAmmo: () => (this.hudDirty = true),
       onSwap: () => (this.hudDirty = true),
     });
@@ -240,6 +245,17 @@ class Game {
   flushPellets() {
     for (const a of this.pelletAcc.values()) this.damageNumber(a.point, Math.round(a.dmg), a.head, a.killed);
     this.pelletAcc.clear();
+  }
+  melee() {
+    const o = this.aim.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
+    const h = this.horde.meleeHit(o, f, 2.4);
+    if (!h) { this.audio.play('swing', { gain: 0.5 }); return; }
+    const def = { id: 'melee', knock: 3.2 };
+    this.pelletMode = false;
+    const res = this.horde.damage(h.e, 110, 'body', h.point, f, def);
+    this.audio.play('flesh', { gain: 1 }); this.audio.play('land', { k: 0.8 });
+    this.shake(0.22); this.hitstop = Math.max(this.hitstop, 0.05);
+    this.onHit({ ...h, part: 'body' }, 110, res);
   }
   onKill(e, info) {
     this.kills++; if (info.head) this.headshots++;
@@ -431,8 +447,8 @@ window.__debug = {
   look(yaw, pitch) { game.player.yaw = yaw; game.player.pitch = pitch; },
   teleport(x, y, z) { game.player.pos.set(x, y, z); game.player.vel.set(0, 0, 0); },
   select(i) { game.arsenal.select(i); },
-  info() { const A = game.arsenal; return { state: game.state, weapon: A.def.id, mag: A.current.mag, ads: A.ads, fps: game.fps, cpuMs: game.cpuMs, hp: game.player.health, wave: game.horde.wave, alive: game.horde.aliveCount(), kills: game.kills, pos: game.player.pos.toArray() }; },
-  spawn(n, dist) { game.horde.debugSpawn(n, dist); },
+  info() { const A = game.arsenal; return { state: game.state, weapon: A.def.id, mag: A.current.mag, ads: A.ads, fps: game.fps, cpuMs: game.cpuMs, hp: game.player.health, wave: game.horde.wave, alive: game.horde.aliveCount(), idle: game.horde.enemies.filter((e) => !e.dead && !e.aware).length, kills: game.kills, pos: game.player.pos.toArray() }; },
+  spawn(n, dist, idle) { game.horde.debugSpawn(n, dist, idle); },
   god(on) { game.god = on; game.player.hurt = on ? () => {} : Player.prototype.hurt; },
   quality(q) { game.applyQuality(q); },
   frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },
