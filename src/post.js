@@ -19,7 +19,7 @@ const GradeShader = {
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + time * 13.7) * 43758.5453); }
     void main(){
       vec2 c = vUv - 0.5; c.x *= aspect; float r = length(c);
-      vec2 off = (vUv - 0.5) * (0.0018 + damage * 0.006) * (1.0 + r * 2.0);
+      vec2 off = (vUv - 0.5) * (0.0008 + damage * 0.006) * (1.0 + r * 2.0);
       vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
       // grade: lift shadows toward teal, push highlights warm, a touch of extra contrast
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));

@@ -47,7 +47,7 @@ export const WEAPONS = [
     hipSpread: 2.0, adsSpread: 0.35, moveSpread: 1.2, bloomPerShot: 0.14, bloomMax: 1.4, bloomRecover: 6,
     recoil: { up: 0.22, upRamp: 0.012, upMax: 0.38, side: 0.16, pattern: [0, 0.06, -0.04, 0.1, -0.08, 0.05, -0.1, 0.12], adsMult: 0.6, recover: 10 },
     kick: { back: 0.04, up: 0.009, pitch: 0.06, yaw: 0.03, roll: 0.06, cam: 0.6 },
-    adsTime: 0.16, adsFov: 56, vmAdsFov: 42, weight: 0.85, sight: 'iron', adsNear: 0.15,
+    adsTime: 0.16, adsFov: 56, vmAdsFov: 42, weight: 0.85, sight: 'iron', adsNear: 0.2,
     sound: { body: 0.72, crack: 0.75, thump: 140, tail: 0.75, pitch: 1.28 },
     tracerChance: 0.5, smoke: 0.35, shake: 0.02, flash: 0.85,
   },

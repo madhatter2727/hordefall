@@ -510,7 +510,7 @@ function buildSMG(M) {
   metal.push(rbx(0.006, 0.006, 0.008, 0.017, -0.072, 0.005, 0.0015));
   steel.push(crossPin(0.0026, 0.034, -0.06, -0.025), crossPin(0.0026, 0.034, -0.07, 0.04));
   // collapsing stock: twin rods + butt plate
-  for (const sx of [-1, 1]) steel.push(cyl(0.0042, -0.235, -0.04, -0.042, 10, sx * 0.0135));
+  for (const sx of [-1, 1]) black.push(cyl(0.0042, -0.235, -0.04, -0.042, 10, sx * 0.0135));
   poly.push(rbx(0.042, 0.088, 0.014, 0, -0.072, -0.238, 0.005));
   rub.push(rbx(0.044, 0.09, 0.008, 0, -0.072, -0.249, 0.003));
   // cocking handle (left, forward): animated

@@ -121,6 +121,7 @@ export function buildArena(scene, quality, A) {
     return grime(new THREE.MeshStandardMaterial({ ...t, metalness: 0.55, roughness: 1, normalScale: new THREE.Vector2(1.4, 1.4) }), { amount: 0.7 });
   });
   const crate = new THREE.MeshStandardMaterial({ ...crateWood(), roughness: 0.85 });
+  const darkSteel = pbr(A, 'rusty_metal_02', { metal: true, color: '#5a5550', envMapIntensity: 1 });
   const interior = interiorMaterial();
 
   // ---------- ground: cracked wet asphalt, pavements along the buildings ----------
@@ -289,6 +290,11 @@ export function buildArena(scene, quality, A) {
   const PH = 2.0;
   solid(concreteMat, 10, PH, 9, 0, 0, 0, { walk: true });
   add(floorMat, tiledBox(10.02, 0.04, 9.02, 1 / 3), 0, PH + 0.005, 0);
+  // steel edge angle round the deck + a darker plinth band at the foot
+  for (const s2 of [-1, 1]) {
+    add(rustSteel, tiledBox(10.1, 0.12, 0.08, 1), 0, PH - 0.04, s2 * 4.53); add(rustSteel, tiledBox(0.08, 0.12, 9.1, 1), s2 * 5.03, PH - 0.04, 0);
+    add(darkConcrete, tiledBox(10.06, 0.35, 0.05, 1 / 2), 0, 0.175, s2 * 4.51); add(darkConcrete, tiledBox(0.05, 0.35, 9.06, 1 / 2), s2 * 5.01, 0.175, 0);
+  }
   solid(concreteMat, 3.2, 0.9, 0.35, -3, PH, -4.3); solid(concreteMat, 3.2, 0.9, 0.35, 3, PH, 4.3);
   solid(concreteMat, 0.35, 0.9, 2.6, 4.8, PH, -2.6); solid(concreteMat, 0.35, 0.9, 2.6, -4.8, PH, 2.6);
   const stairs = (x, z, dirX, dirZ, width, height, steps) => {
@@ -299,6 +305,10 @@ export function buildArena(scene, quality, A) {
       const cx = x + dirX * along, cz = z + dirZ * along;
       if (dirX) solid(concreteMat, d, h, width, cx, 0, cz, { walk: true });
       else solid(concreteMat, width, h, d, cx, 0, cz, { walk: true });
+      // worn steel nosing on each tread
+      const nx = cx + dirX * (d / 2 - 0.03), nz = cz + dirZ * (d / 2 - 0.03);
+      if (dirX) add(rustSteel, tiledBox(0.07, 0.035, width + 0.01, 1), nx, h - 0.012, nz);
+      else add(rustSteel, tiledBox(width + 0.01, 0.035, 0.07, 1), nx, h - 0.012, nz);
     }
   };
   stairs(0, -4.5, 0, -1, 3, PH, 8);
@@ -309,6 +319,22 @@ export function buildArena(scene, quality, A) {
     const L = 6.1, W = 2.44, Hc = 2.6;
     const w = rotY ? W : L, d = rotY ? L : W;
     add(containerMats[mi], tiledBox(w, Hc, d, 1 / 2.6), x, y0 + Hc / 2, z);
+    // corner castings, posts and top/bottom rails so it reads as a real ISO box
+    const P = 0.13, e = 0.02;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      add(rustSteel, tiledBox(P, Hc + e, P, 2), x + sx * (w / 2 - P / 2 + e), y0 + Hc / 2, z + sz * (d / 2 - P / 2 + e));
+      for (const yy of [0.09, Hc - 0.09]) add(darkSteel, tiledBox(0.18, 0.18, 0.18, 2), x + sx * (w / 2 - 0.08 + e), y0 + yy, z + sz * (d / 2 - 0.08 + e));
+    }
+    for (const yy of [0.06, Hc - 0.05]) for (const s2 of [-1, 1]) {
+      if (w > d) add(rustSteel, tiledBox(w - 0.1, 0.1, 0.06, 1), x, y0 + yy, z + s2 * (d / 2 + 0.01));
+      else add(rustSteel, tiledBox(0.06, 0.1, d - 0.1, 1), x + s2 * (w / 2 + 0.01), y0 + yy, z);
+    }
+    // door end: locking bars
+    const endX = w > d ? x + w / 2 + 0.03 : x, endZ = w > d ? z : z + d / 2 + 0.03;
+    for (const k of [-0.75, -0.3, 0.3, 0.75]) {
+      if (w > d) add(darkSteel, tiledBox(0.04, Hc - 0.3, 0.04, 1), endX, y0 + Hc / 2, z + k * d / 2);
+      else add(darkSteel, tiledBox(0.04, Hc - 0.3, 0.04, 1), x + k * w / 2, y0 + Hc / 2, endZ);
+    }
     colliders.push({ minX: x - w / 2, maxX: x + w / 2, minY: y0, maxY: y0 + Hc, minZ: z - d / 2, maxZ: z + d / 2, walk: false, mat: 'metal', top: y0 + Hc });
   };
   container(-16, -8, 0, 0); container(-16, -5.4, 0, 1); container(-16, -8, 0, 2, 2.6);
@@ -327,10 +353,19 @@ export function buildArena(scene, quality, A) {
     .forEach(([x, z, rot]) => barrier(x, z, rot));
 
   // ---------- crates ----------
+  // scanned Poly Haven crate (unit-normalised from its bounds), procedural boxes as a fallback
+  const crateBox = A.models.wooden_crate_01 && new THREE.Box3().setFromObject(A.models.wooden_crate_01.scene);
+  const crateAt = (x, y, z, s, rot) => {
+    if (crateBox) {
+      const sz = crateBox.getSize(new THREE.Vector3()), k = s / Math.max(sz.x, sz.z), ky = s / sz.y;
+      propAt('wooden_crate_01', x, y - crateBox.min.y * ky, z, rot, k, ky);
+      solid(null, s, s, s, x, y, z, { surface: 'wood' });
+    } else solid(crate, s, s, s, x, y, z, { density: 1 / s, surface: 'wood' });
+  };
   [[-4, -15], [-3, -16.2], [7, 17], [16, -6], [-19, 12], [26, 6], [-26, -6], [4, -29]].forEach(([x, z], i) => {
     const s = 1.1 + (i % 3) * 0.15;
-    solid(crate, s, s, s, x, 0, z, { density: 1 / s, surface: 'wood' });
-    if (i % 3 === 0) solid(crate, 0.9, 0.9, 0.9, x + 0.1, s, z - 0.05, { density: 1 / 0.9, surface: 'wood' });
+    crateAt(x, 0, z, s, (i % 2) * Math.PI / 2);
+    if (i % 3 === 0) crateAt(x + 0.1, s, z - 0.05, 0.9, 0.3);
   });
 
   // ---------- broken overpass ----------

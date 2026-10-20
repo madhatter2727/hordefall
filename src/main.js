@@ -524,7 +524,7 @@ class Game {
   updateEntry() {
     const r = this.run; if (!r) return;
     const g = this.global?.top;
-    r.globalQualifies = !!g && r.score > 0 && (g.length < 10 || r.score > g[g.length - 1].score);
+    r.globalQualifies = !!g && this.global.ok && r.score > 0 && (g.length < 10 || r.score > g[g.length - 1].score);
     $('d-entry').classList.toggle('on', !r.saved && (r.qualifies || r.globalQualifies));
   }
   async fetchGlobal() {
