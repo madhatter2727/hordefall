@@ -89,20 +89,25 @@ function huskMaterial(char, ember) {
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute float iFlash; attribute float iDissolve; attribute float iHeat; attribute float iHue; attribute float glow;
-        varying float vFlash; varying float vDissolve; varying float vHeat; varying float vGlow; varying float vHue; varying vec3 vLocal;`)
+        attribute float iFlash; attribute float iDissolve; attribute float iHeat; attribute float iHue; attribute float iWound; attribute float glow;
+        varying float vFlash; varying float vDissolve; varying float vHeat; varying float vGlow; varying float vHue; varying float vWound; varying vec3 vLocal;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vFlash = iFlash; vHue = iHue; vDissolve = iDissolve; vHeat = iHeat; vGlow = glow; vLocal = position * 9.0 + vec3(float(gl_InstanceID) * 3.7);`);
+        vFlash = iFlash; vHue = iHue; vWound = iWound; vDissolve = iDissolve; vHeat = iHeat; vGlow = glow; vLocal = position * 9.0 + vec3(float(gl_InstanceID) * 3.7);`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying float vFlash; varying float vDissolve; varying float vHeat; varying float vGlow; varying float vHue; varying vec3 vLocal;
+        varying float vFlash; varying float vDissolve; varying float vHeat; varying float vGlow; varying float vHue; varying float vWound; varying vec3 vLocal;
         float h3(vec3 p){ return fract(sin(dot(p, vec3(17.1, 113.7, 51.3))) * 43758.5453); }
         float n3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
           return mix(mix(mix(h3(i), h3(i+vec3(1,0,0)), f.x), mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
                      mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x), mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z); }`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
         float dn = n3(vLocal) * 0.65 + n3(vLocal * 2.7) * 0.35;
-        if (dn < vDissolve) discard;`)
+        if (dn < vDissolve) discard;
+        // wounds: wet blood blotches that spread as the part takes damage
+        float wn = n3(vLocal * 0.55 + 7.0) * 0.7 + n3(vLocal * 1.9) * 0.3;
+        float wound = smoothstep(1.02 - vWound * 0.62, 1.08 - vWound * 0.62, wn + 0.12) * step(0.01, vWound);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.22, wound);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         totalEmissiveRadiance *= vHeat * (0.75 + 0.25 * sin(vLocal.y * 0.7 + vLocal.x));
         totalEmissiveRadiance += vec3(6.0, 2.2, 0.6) * vGlow * (1.0 - vDissolve);
@@ -112,6 +117,8 @@ function huskMaterial(char, ember) {
         totalEmissiveRadiance = mix(totalEmissiveRadiance, vec3(0.45, 1.0, 0.12) * lumE * 1.8, vHue);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 1.0, 0.72), vHue);
         totalEmissiveRadiance += vec3(0.9, 0.55, 0.35) * vFlash;
+        totalEmissiveRadiance *= 1.0 - wound * 0.85;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.004, 0.006), wound * 0.92);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), vFlash * 0.25);`);
   };
   return m;
@@ -142,15 +149,15 @@ export class Horde {
     this.parts = PARTS.map(([name, a, b, r, kind]) => {
       const geo = partGeometry(name, r);
       const mk = (n) => new THREE.InstancedBufferAttribute(new Float32Array(MAXI).fill(n), 1).setUsage(THREE.DynamicDrawUsage);
-      const flash = mk(0), diss = mk(0), heat = mk(1), hue = mk(0);
-      geo.setAttribute('iHue', hue); geo.setAttribute('iFlash', flash); geo.setAttribute('iDissolve', diss); geo.setAttribute('iHeat', heat);
+      const flash = mk(0), diss = mk(0), heat = mk(1), hue = mk(0), wound = mk(0);
+      geo.setAttribute('iHue', hue); geo.setAttribute('iWound', wound); geo.setAttribute('iFlash', flash); geo.setAttribute('iDissolve', diss); geo.setAttribute('iHeat', heat);
       const mesh = new THREE.InstancedMesh(geo, this.material, MAXI);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0;
       mesh.customDepthMaterial = this.depthMat;
       mesh.setColorAt(0, new THREE.Color(1, 1, 1));
       scene.add(mesh);
-      return { name, a, b, r, kind, mesh, flash, diss, heat, hue, len: LEN[name.replace(/[LR]$/, '')] };
+      return { name, a, b, r, kind, mesh, flash, diss, heat, hue, wound, len: LEN[name.replace(/[LR]$/, '')] };
     });
     this.pool = [];
     this.enemies = [];
@@ -301,7 +308,7 @@ export class Horde {
     e.armHeight = rand(0.75, 1.25);
     e.heat = T.heat * rand(0.8, 1.2);
     e.lastHit = -1; e.rest = {}; e.pooled = false; e.near = null;
-    e.maxHp = e.hp; e.lost = 0; e.limbDmg = e.limbDmg || new Float32Array(10); e.limbDmg.fill(0);
+    e.maxHp = e.hp; e.lost = 0; e.limbDmg = e.limbDmg || new Float32Array(10); e.limbDmg.fill(0); e.wound = e.wound || new Float32Array(10); e.wound.fill(0);
     e.crawl = false; e.armless = false; e.stumps = []; e.facePlayer = false;
     e.spitCd = rand(1.2, 2.5); e.charge = -1; e.orb = null; e.strafe = Math.random() < 0.5 ? -1 : 1; e.strafeT = rand(1.5, 3); e.spitRecoil = 0;
     e.bs = 'walk'; e.bt = 0; e.chargeCd = 3; e.slamCd = 2; e.stunDur = 1; e.chargeDir = e.chargeDir || new THREE.Vector3(); e.chargeHit = false; e.prePos = e.prePos || new THREE.Vector3();
@@ -410,6 +417,7 @@ export class Horde {
   }
   damage(e, amount, part, point, dir, def, pi = -1) {
     if (e.dead) {
+      if (pi >= 0) e.wound[pi] = Math.min(1, e.wound[pi] + 0.3);
       if (e.deadT === 0 && e.type.sever && pi > 0 && (def.id === 'sg' || def.id === 'mr')) {
         e.limbDmg[pi] += amount * SEVER_F[def.id];
         if (e.limbDmg[pi] >= SEVER_THR[pi] * e.type.sever * (pi === 1 ? 0.5 : 0.35)) this.sever(e, pi, dir);
@@ -429,6 +437,7 @@ export class Horde {
     }
     e.hp -= amount; e.flash = armor ? 0.35 : 1; e.lastHit = performance.now();
     if (!e.aware) this.wake(e);
+    if (pi >= 0 && !armor) e.wound[pi] = Math.min(1, e.wound[pi] + 0.25 + amount / 60);
     if (armor) { this.hooks.fx.impact(point, dir.clone().negate(), 'metal'); if (Math.random() < 0.5) this.hooks.audio.play('armor'); }
     else if (T.hue) this.hooks.fx.ichor(point, dir, big ? 0.6 : 0.35, true);
     else this.hooks.fx.bloodHit(point, dir, big || part === 'head');
@@ -460,10 +469,12 @@ export class Horde {
     const idxs = (SEVER_GROUP[pi] || [pi]).filter((i) => !(e.lost & (1 << i)));
     if (!idxs.length) return;
     for (const i of idxs) e.lost |= 1 << i;
+    const PARENT = { 1: 0, 2: 0, 3: 2, 4: 0, 5: 4, 6: 0, 7: 6, 8: 0, 9: 8 };
+    e.wound[PARENT[idxs[0]]] = 1;
     const jIdx = [PARTS[idxs[0]][1], ...idxs.map((i) => PARTS[i][2])];
     // detached limb: a little Verlet chain that tumbles and burns away
     const L = this.limbs.length >= LIMB_MAX ? this.limbs.shift() : this.limbPool.pop() || { pts: [0, 1, 2].map(() => new THREE.Vector3()), prev: [0, 1, 2].map(() => new THREE.Vector3()), side: new THREE.Vector3(), len: [0, 0] };
-    L.n = jIdx.length; L.segs = idxs; L.t = 0; L.dis = 0; L.scale = e.scale; L.hue = e.type.hue || 0; L.heat = e.heat * 1.4;
+    L.n = jIdx.length; L.segs = idxs; L.wound = 1; L.t = 0; L.dis = 0; L.scale = e.scale; L.hue = e.type.hue || 0; L.heat = e.heat * 1.4;
     L.side.copy(e.joints[J.rSh]).sub(e.joints[J.lSh]).normalize();
     const h = 1 / 120, base = dir.clone().setY(0).normalize().multiplyScalar(rand(2.5, 5)).add(e.vel.clone().multiplyScalar(0.5)); base.y += rand(2.2, 4.2);
     for (let k = 0; k < L.n; k++) {
@@ -475,7 +486,7 @@ export class Horde {
     this.limbs.push(L);
     const stump = e.joints[jIdx[0]];
     this.hooks.fx.ichor(stump, dir, 1.4, !!e.type.hue);
-    e.stumps.push({ j: jIdx[0], t: 1.3 });
+    e.stumps.push({ j: jIdx[0], t: 3.0 });
     this.hooks.audio.play('sever');
     if (!e.dead) {
       if (idxs.some((i) => i >= 6)) { e.crawl = true; e.stagger = Math.max(e.stagger, 0.7); e.attackT = -1; this.cancelSpit(e); }
@@ -509,6 +520,7 @@ export class Horde {
       e.prev[i].copy(j).addScaledVector(v, -h).addScaledVector(push, -h * (0.35 + w * 1.4));
     }
     if (head) this.hooks.fx.bloodHit(e.joints[J.head], dir, true);
+    if (!e.type.hue) this.hooks.fx.bloodMist(point, dir, e.type.brute ? 2 : 1);
     this.hooks.audio.play('scream', { gain: 0.5 });
   }
 
@@ -552,7 +564,7 @@ export class Horde {
     const dir = new THREE.Vector3(), toP = new THREE.Vector3(), sep = new THREE.Vector3(), perp = new THREE.Vector3();
     for (const e of this.enemies) {
       if (e.stumps.length) this.updateStumps(e, dt);
-      if (e.dead) { this.updateRagdoll(e, dt); continue; }
+      if (e.dead) { e.flash = Math.max(0, e.flash - dt * 9); this.updateRagdoll(e, dt); continue; }
       const T = e.type;
       toP.copy(P.pos).sub(e.pos); const dy = toP.y; toP.y = 0;
       const dist = toP.length(); toP.divideScalar(dist || 1);
@@ -800,11 +812,14 @@ export class Horde {
     for (let i = e.stumps.length - 1; i >= 0; i--) {
       const st = e.stumps[i]; st.t -= dt;
       if (st.t <= 0 || e.dissolve > 0.2) { e.stumps.splice(i, 1); continue; }
-      if (Math.random() < 0.7) {
-        const j = e.joints[st.j];
-        tA.copy(j).sub(e.joints[J.pelvis]); tA.y += 0.4; tA.normalize();
-        this.hooks.fx.stumpSpray(j, tA, !!e.type.hue);
-      }
+      const j = e.joints[st.j];
+      tA.copy(j).sub(e.joints[st.j === J.chest ? J.pelvis : J.chest]); tA.y += 0.35; tA.normalize();
+      if (e.type.hue) { if (Math.random() < 0.7) this.hooks.fx.stumpSpray(j, tA, true); continue; }
+      // arterial pumping: strong pulses that weaken as it bleeds out
+      st.ph = (st.ph || 0) + dt * 8.5;
+      const pulse = Math.max(0, Math.sin(st.ph)) * Math.min(1, st.t / 1.5 + 0.25);
+      if (pulse > 0.25) for (let k = 0; k < 2; k++) this.hooks.fx.artery(j, tA, pulse);
+      else if (Math.random() < 0.3) this.hooks.fx.stumpSpray(j, tA, false);
     }
   }
   updateLimbs(dt) {
@@ -996,7 +1011,7 @@ export class Horde {
         mesh.setMatrixAt(i, tmpM);
         const charge = e.charge >= 0 ? 1 + 2.5 * Math.min(1, e.charge / SPIT_CHARGE) : 1;
         const bossGlow = e.type.boss && pi === 1 ? 1.5 : 1; // head weak point burns brighter
-        P.flash.array[i] = e.flash; P.diss.array[i] = e.dissolve * 1.05; P.hue.array[i] = e.type.hue || 0;
+        P.flash.array[i] = e.flash; P.diss.array[i] = e.dissolve * 1.05; P.hue.array[i] = e.type.hue || 0; P.wound.array[i] = e.wound[pi];
         P.heat.array[i] = (e.dead ? e.heat * (1 + Math.min(e.deadT, 1.5) * 0.5) : e.heat * charge) * bossGlow;
       }
       // detached limbs share the same instanced meshes
@@ -1010,11 +1025,11 @@ export class Horde {
         const s = L.scale;
         tmpM.makeBasis(tX.multiplyScalar(s), tY.multiplyScalar(P.kind === 'head' ? s : len / P.len), tZ.multiplyScalar(s));
         tmpM.setPosition(A); mesh.setMatrixAt(c, tmpM);
-        P.flash.array[c] = 0; P.diss.array[c] = L.dis * 1.05; P.hue.array[c] = L.hue; P.heat.array[c] = L.heat * (1 + Math.min(L.t, 1.5) * 0.6);
+        P.flash.array[c] = 0; P.diss.array[c] = L.dis * 1.05; P.hue.array[c] = L.hue; P.wound.array[c] = 0.85; P.heat.array[c] = L.heat * (1 + Math.min(L.t, 1.5) * 0.6);
         c++;
       }
       mesh.count = c;
-      mesh.instanceMatrix.needsUpdate = true; P.flash.needsUpdate = P.diss.needsUpdate = P.heat.needsUpdate = P.hue.needsUpdate = true;
+      mesh.instanceMatrix.needsUpdate = true; P.flash.needsUpdate = P.diss.needsUpdate = P.heat.needsUpdate = P.hue.needsUpdate = P.wound.needsUpdate = true;
     }
     void tS;
   }

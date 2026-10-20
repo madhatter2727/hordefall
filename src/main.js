@@ -167,7 +167,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0;
-    this.damageFx = 0; this.acidFx = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
+    this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
     if (!fromMenu) this.input.lock();
@@ -200,7 +200,7 @@ class Game {
     return hit ? { t: best, c: hit } : null;
   }
   shoot(origin, dir, def, first) {
-    if (first) { this.vmToWorld(this.arsenal.muzzleWorld(), this.muzzleNow); this.shotsFired++; }
+    if (first) { this.vmToWorld(this.arsenal.muzzleWorld(), this.muzzleNow); this.shotsFired++; this.splatsThisShot = 0; }
     this.pelletMode = def.pellets > 1;
     if (first) this.pelletSounded = false;
     const n = this.tmpN;
@@ -214,6 +214,8 @@ class Game {
       dmg *= h.part === 'head' ? def.headMult : h.part === 'limb' ? def.limbMult : 1;
       if (hitAny) dmg *= 0.7; // pierced
       const res = this.horde.damage(h.e, dmg, h.part, h.point, dir, def, h.pi);
+      if (!h.e.type.hue && !res.armor) this.splatter(h.point, dir, def, h.part === 'head' || res.killed);
+      if (res.killed) this.killFx(h, dir, def, res);
       this.onHit(h, dmg, res);
       hitAny = true;
       if (pierce-- <= 0) { endT = h.t; break; }
@@ -234,6 +236,37 @@ class Game {
       const from = this.muzzleNow.clone().addScaledVector(dir, 1.2);
       if (end.distanceTo(from) > 2) this.fx.tracers.add(from, end, def.id === 'mr' ? 520 : 400, def.id === 'mr' ? 10 : 6, def.id === 'mr' ? 0.03 : 0.02);
     }
+  }
+  // blood thrown past the target lands on the nearest wall behind it and on the ground
+  splatter(point, dir, def, heavy) {
+    if ((this.splatsThisShot = (this.splatsThisShot || 0) + 1) > (def.pellets > 1 ? 4 : 2)) return;
+    const n = this.tmpN2 || (this.tmpN2 = new THREE.Vector3());
+    const big = heavy || def.id !== 'ar';
+    const wh = this.raycastWorld(point, dir, big ? 4.5 : 3, n);
+    if (wh && n.y < 0.7) this.fx.splat.add(point.clone().addScaledVector(dir, wh.t), n.clone(), rand(0.45, 0.8) * (big ? 1.5 : 1) * (1 - wh.t / 6), dir, 1.4);
+    if (Math.random() < (big ? 0.9 : 0.5)) {
+      const fwd = dir.clone().setY(0); const L = fwd.length(); if (L > 1e-3) fwd.divideScalar(L);
+      const at = point.clone().addScaledVector(fwd, rand(0.4, big ? 1.8 : 1.1));
+      const g = this.horde.groundAt(at.x, at.z, point.y);
+      this.fx.splat.add(new THREE.Vector3(at.x, g + 0.012, at.z), new THREE.Vector3(0, 1, 0), rand(0.5, 0.9) * (big ? 1.5 : 1), fwd, 1.7);
+    }
+  }
+  // kill flourish: chunks on violent kills, screen splash when it happens in your face
+  killFx(h, dir, def, res) {
+    const e = h.e; if (e.type.hue) return;
+    const dist = h.point.distanceTo(this.camera.position);
+    const violent = (def.id === 'sg' && dist < 7) || (def.id === 'mr' && (res.head || dist < 12)) || def.id === 'melee' || e.type.boss;
+    if (violent) {
+      const g = this.horde.groundAt(h.point.x, h.point.z, h.point.y);
+      this.fx.gib(h.point, dir, e.type.boss ? 16 : res.head ? 7 : 9, g);
+      const n = this.tmpN2 || (this.tmpN2 = new THREE.Vector3());
+      for (let i = 0; i < 3; i++) {
+        const d2 = dir.clone().add(new THREE.Vector3(rand(-0.35, 0.35), rand(-0.2, 0.3), rand(-0.35, 0.35))).normalize();
+        const wh = this.raycastWorld(h.point, d2, 5, n);
+        if (wh && n.y < 0.7) this.fx.splat.add(h.point.clone().addScaledVector(d2, wh.t), n.clone(), rand(0.8, 1.3), d2, 1.5);
+      }
+    }
+    if (dist < 4.2) { this.screenBlood = Math.min(1, (this.screenBlood || 0) + (violent ? 1 : 0.7)); this.post.u.bloodSeed.value = Math.random(); }
   }
   onHit(h, dmg, res) {
     if (res.corpse) return;
@@ -259,6 +292,7 @@ class Game {
     const def = { id: 'melee', knock: 3.2 };
     this.pelletMode = false;
     const res = this.horde.damage(h.e, 110, 'body', h.point, f, def);
+    if (!h.e.type.hue) { this.splatter(h.point, f, def, true); if (res.killed) this.killFx(h, f, def, res); }
     this.audio.play('flesh', { gain: 1 }); this.audio.play('land', { k: 0.8 });
     this.shake(0.22); this.hitstop = Math.max(this.hitstop, 0.05);
     this.onHit({ ...h, part: 'body' }, 110, res);
@@ -382,6 +416,7 @@ class Game {
     u.dead.value = this.state === 'dead' ? clamp(this.deadT / 1.5, 0, 1) : 0;
     u.flash.value = Math.max(0, A.flashT / 0.05);
     this.acidFx = Math.max(0, (this.acidFx || 0) - dt * 0.7); u.acid.value = this.acidFx;
+    this.screenBlood = Math.max(0, (this.screenBlood || 0) - dt * 0.55); u.blood.value = this.screenBlood;
 
     this.updateHUD(raw, ads);
     this.cpuMs = lerp(this.cpuMs || 0, performance.now() - t0, 0.1);

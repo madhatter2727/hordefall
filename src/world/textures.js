@@ -171,12 +171,51 @@ export function bulletHoleTexture() {
   for (let i = 0; i < 7; i++) { const a = Math.random() * 6.28; ctx.beginPath(); ctx.moveTo(32 + Math.cos(a) * 6, 32 + Math.sin(a) * 6); ctx.lineTo(32 + Math.cos(a) * (12 + Math.random() * 12), 32 + Math.sin(a) * (12 + Math.random() * 12)); ctx.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
+// pooled blood: a dark wet core with satellite drops (2x2 atlas of variants)
 export function bloodTexture() {
-  const [c, ctx] = canvas(128, 128);
-  for (let i = 0; i < 26; i++) {
-    const a = Math.random() * 6.28, d = Math.random() * 40, r = 4 + Math.random() * (22 - d * 0.4);
-    ctx.fillStyle = `rgba(${70 + Math.random() * 40},4,6,${0.7 + Math.random() * 0.3})`;
-    ctx.beginPath(); ctx.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, Math.max(2, r), 0, 6.28); ctx.fill();
+  const S = 256, [c, ctx] = canvas(S, S);
+  for (let q = 0; q < 4; q++) {
+    const ox = (q % 2) * 128 + 64, oy = Math.floor(q / 2) * 128 + 64;
+    for (let i = 0; i < 30; i++) {
+      const a = Math.random() * 6.28, d = Math.pow(Math.random(), 1.6) * 44, r = 3 + Math.random() * (24 - d * 0.42);
+      ctx.fillStyle = `rgba(${60 + Math.random() * 45},${2 + Math.random() * 5},${4 + Math.random() * 6},${0.75 + Math.random() * 0.25})`;
+      ctx.beginPath(); ctx.ellipse(ox + Math.cos(a) * d, oy + Math.sin(a) * d, Math.max(2, r), Math.max(2, r) * (0.7 + Math.random() * 0.3), a, 0, 6.28); ctx.fill();
+    }
+    for (let i = 0; i < 16; i++) { // flung droplets
+      const a = Math.random() * 6.28, d = 44 + Math.random() * 16, r = 0.8 + Math.random() * 2.5;
+      ctx.fillStyle = `rgba(90,4,6,0.9)`; ctx.beginPath(); ctx.arc(ox + Math.cos(a) * d, oy + Math.sin(a) * d, r, 0, 6.28); ctx.fill();
+    }
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+// directional spatter (spray direction = +x): streaks, elongated drops, a few drips (2x2 atlas)
+export function splatterTexture() {
+  const S = 256, [c, ctx] = canvas(S, S);
+  for (let q = 0; q < 4; q++) {
+    const ox = (q % 2) * 128 + 20, oy = Math.floor(q / 2) * 128 + 64;
+    ctx.fillStyle = 'rgba(85,3,6,0.92)'; ctx.beginPath(); ctx.ellipse(ox + 16, oy, 14, 10, 0, 0, 6.28); ctx.fill();
+    for (let i = 0; i < 40; i++) {
+      const ang = (Math.random() - 0.5) * 1.1, d = 10 + Math.pow(Math.random(), 0.8) * 92, r = Math.max(0.7, 6 * (1 - d / 110) * Math.random() + 0.6);
+      const x = ox + Math.cos(ang) * d, y = oy + Math.sin(ang) * d;
+      ctx.fillStyle = `rgba(${70 + Math.random() * 50},3,6,${0.8 + Math.random() * 0.2})`;
+      ctx.beginPath(); ctx.ellipse(x, y, r * (1.5 + d / 40), r, ang, 0, 6.28); ctx.fill();
+    }
+    for (let i = 0; i < 4; i++) { // drips running down
+      const x = ox + 8 + Math.random() * 60, y = oy + (Math.random() - 0.5) * 20, len = 10 + Math.random() * 30;
+      ctx.fillStyle = 'rgba(75,3,6,0.85)'; ctx.fillRect(x - 1.2, y, 2.4, len); ctx.beginPath(); ctx.arc(x, y + len, 2.4, 0, 6.28); ctx.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+// full-screen splash for close kills (alpha mask)
+export function screenBloodTexture() {
+  const [c, ctx] = canvas(512, 256);
+  const blob = (x, y, r, a) => { ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill(); };
+  for (let k = 0; k < 7; k++) {
+    const cx = Math.random() < 0.5 ? Math.random() * 140 : 372 + Math.random() * 140, cy = Math.random() * 256;
+    for (let i = 0; i < 26; i++) { const a = Math.random() * 6.28, d = Math.pow(Math.random(), 1.5) * 50; blob(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.6, 3 + Math.random() * 16 * (1 - d / 60), 0.85); }
+    for (let i = 0; i < 3; i++) { const x = cx + (Math.random() - 0.5) * 40; ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(x - 2, cy, 4, 30 + Math.random() * 60); }
+  }
+  for (let i = 0; i < 60; i++) blob(Math.random() * 512, Math.random() * 256, 0.8 + Math.random() * 2.5, 0.9);
+  const t = new THREE.CanvasTexture(c); return t;
 }

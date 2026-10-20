@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { bulletHoleTexture, bloodTexture } from '../world/textures.js';
+import { bulletHoleTexture, bloodTexture, splatterTexture } from '../world/textures.js';
 import { rand } from '../core/util.js';
 
 // ---------- billboard particle system (CPU sim, one instanced draw call) ----------
@@ -79,30 +79,95 @@ class Particles {
   }
 }
 
-// ---------- decals (instanced quads with a fade) ----------
+// ---------- decals (instanced quads; optional 2x2 atlas for variety) ----------
 class Decals {
   constructor(scene, max, tex, opts = {}) {
-    this.max = max; this.i = 0;
+    this.max = max; this.i = 0; this.atlas = !!opts.atlas;
     const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: opts.roughness ?? 0.9, metalness: 0 });
-    this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, max);
+    const geo = new THREE.PlaneGeometry(1, 1);
+    if (this.atlas) {
+      this.aUv = new THREE.InstancedBufferAttribute(new Float32Array(max * 2), 2);
+      geo.setAttribute('iUv', this.aUv);
+      mat.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 iUv;')
+          .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv = vMapUv * 0.5 + iUv;\n#endif');
+      };
+    }
+    this.mesh = new THREE.InstancedMesh(geo, mat, max);
     this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.receiveShadow = true;
     scene.add(this.mesh);
     this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.s = new THREE.Vector3(); this.z = new THREE.Vector3(0, 0, 1);
+    this.bx = new THREE.Vector3(); this.by = new THREE.Vector3(); this.rm = new THREE.Matrix4();
   }
-  add(pos, normal, size) {
-    this.q.setFromUnitVectors(this.z, normal);
-    const spin = new THREE.Quaternion().setFromAxisAngle(this.z, Math.random() * Math.PI * 2);
-    this.q.multiply(spin);
-    this.s.set(size, size, size);
-    this.m.compose(pos.clone().addScaledVector(normal, 0.004), this.q, this.s);
+  // dir (optional): the decal's +x is laid along dir projected onto the surface (sprays, smears)
+  add(pos, normal, size, dir = null, stretch = 1) {
+    if (dir) {
+      this.bx.copy(dir).addScaledVector(normal, -dir.dot(normal));
+      if (this.bx.lengthSq() < 1e-4) this.bx.set(1, 0, 0).addScaledVector(normal, -normal.x);
+      this.bx.normalize(); this.by.crossVectors(normal, this.bx);
+      this.rm.makeBasis(this.bx, this.by, normal); this.q.setFromRotationMatrix(this.rm);
+      this.s.set(size * stretch, size, size);
+    } else {
+      this.q.setFromUnitVectors(this.z, normal);
+      const spin = new THREE.Quaternion().setFromAxisAngle(this.z, Math.random() * Math.PI * 2);
+      this.q.multiply(spin);
+      this.s.set(size, size, size);
+    }
+    this.m.compose(pos.clone().addScaledVector(normal, 0.004 + Math.random() * 0.003), this.q, this.s);
     const idx = this.i++ % this.max;
     this.mesh.setMatrixAt(idx, this.m);
+    if (this.atlas) { this.aUv.setXY(idx, (Math.random() < 0.5 ? 0 : 0.5), (Math.random() < 0.5 ? 0 : 0.5)); this.aUv.needsUpdate = true; }
     this.mesh.count = Math.min(this.max, this.i);
     this.mesh.instanceMatrix.needsUpdate = true;
     return idx;
   }
   hide(idx) { this.m.makeScale(0, 0, 0); this.mesh.setMatrixAt(idx, this.m); this.mesh.instanceMatrix.needsUpdate = true; }
   clear() { this.i = 0; this.mesh.count = 0; }
+}
+
+// ---------- gibs: pooled meaty chunks with simple rigid-ish physics ----------
+class Gibs {
+  constructor(scene, max = 64) {
+    this.max = max; this.items = [];
+    const g = new THREE.IcosahedronGeometry(1, 1);
+    const p = g.attributes.position; // lumpy
+    for (let i = 0; i < p.count; i++) { const k = 0.7 + Math.random() * 0.5; p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.8, p.getZ(i) * k); }
+    g.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: '#7a0c0c', roughness: 0.35, metalness: 0.05, emissive: '#1a0000' });
+    this.mesh = new THREE.InstancedMesh(g, mat, max);
+    this.mesh.count = 0; this.mesh.castShadow = true; this.mesh.frustumCulled = false;
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.colors = [new THREE.Color('#ffffff'), new THREE.Color('#c9b0a0'), new THREE.Color('#5a3a30')];
+    scene.add(this.mesh);
+    this.o = new THREE.Object3D();
+  }
+  spawn(pos, vel, size, ground) {
+    if (this.items.length >= this.max) this.items.shift();
+    this.items.push({ pos: pos.clone(), vel, rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), spin: new THREE.Vector3(rand(-12, 12), rand(-12, 12), rand(-12, 12)), size, t: 0, ground, landed: false, col: Math.random() < 0.2 ? 1 : 0 });
+  }
+  update(dt, fx) {
+    this.items = this.items.filter((g) => g.t < 9);
+    this.items.forEach((g, i) => {
+      g.t += dt;
+      if (!g.rest) {
+        g.vel.y -= 16 * dt; g.pos.addScaledVector(g.vel, dt);
+        g.rot.x += g.spin.x * dt; g.rot.y += g.spin.y * dt; g.rot.z += g.spin.z * dt;
+        const floor = g.ground + g.size * 0.6;
+        if (g.pos.y < floor) {
+          g.pos.y = floor;
+          if (!g.landed) { g.landed = true; fx.blood.add(new THREE.Vector3(g.pos.x, g.ground + 0.012, g.pos.z), new THREE.Vector3(0, 1, 0), g.size * rand(5, 8), new THREE.Vector3(g.vel.x, 0, g.vel.z), 1.6); }
+          g.vel.y *= -0.25; g.vel.x *= 0.55; g.vel.z *= 0.55; g.spin.multiplyScalar(0.5);
+          if (Math.abs(g.vel.y) < 0.4 && Math.hypot(g.vel.x, g.vel.z) < 0.3) g.rest = true;
+        }
+      }
+      const shrink = g.t > 7.5 ? 1 - (g.t - 7.5) / 1.5 : 1;
+      this.o.position.copy(g.pos); this.o.rotation.copy(g.rot); this.o.scale.setScalar(g.size * shrink);
+      this.o.updateMatrix(); this.mesh.setMatrixAt(i, this.o.matrix); this.mesh.setColorAt(i, this.colors[g.col]);
+    });
+    this.mesh.count = this.items.length;
+    this.mesh.instanceMatrix.needsUpdate = true; if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+  }
+  clear() { this.items.length = 0; this.mesh.count = 0; }
 }
 
 // ---------- tracers ----------
@@ -159,14 +224,15 @@ export class Effects {
     this.add = new Particles(scene, 1400, true);
     this.alpha = new Particles(scene, 1200, false);
     this.holes = new Decals(scene, quality === 'low' ? 160 : 400, bulletHoleTexture());
-    this.blood = new Decals(scene, 140, bloodTexture(), { roughness: 0.6 });
-    this.blood.mesh.material.color.set('#2a2420'); // scorch/ash marks rather than blood
+    this.blood = new Decals(scene, quality === 'low' ? 120 : 220, bloodTexture(), { roughness: 0.18, atlas: true }); // pools (ground)
+    this.splat = new Decals(scene, quality === 'low' ? 120 : 240, splatterTexture(), { roughness: 0.3, atlas: true }); // sprays (walls + ground)
+    this.gibs = new Gibs(scene, quality === 'low' ? 40 : 72);
     this.tracers = new Tracers(scene);
     // pooled world flash lights (muzzle + explosions)
     this.muzzleLight = new THREE.PointLight('#ffb35c', 0, 9, 2); scene.add(this.muzzleLight);
     this.flashT = 0;
     this.embers = this.makeEmbers(scene);
-    this.acid = new Decals(scene, 24, bloodTexture(), { roughness: 0.2 });
+    this.acid = new Decals(scene, 24, bloodTexture(), { roughness: 0.2, atlas: true });
     this.acid.mesh.material.color.set('#7dff4a'); this.acid.mesh.material.emissive = new THREE.Color(0.25, 1.0, 0.1); this.acid.mesh.material.emissiveIntensity = 1.4;
     this.acid.mesh.material.emissiveMap = this.acid.mesh.material.map;
     // shockwave rings (pooled)
@@ -230,26 +296,44 @@ export class Effects {
     this.holes.add(point, normal, rand(0.07, 0.11) * (metal ? 0.8 : 1));
   }
 
-  // flesh hit, gore-free: charred flakes + ash puff + molten ichor flecks
+  // flesh hit: directional red spray (streaks + droplets) along the bullet, back-spatter, a little mist
   bloodHit(point, dir, big = false) {
-    const n = big ? 16 : 9;
+    const n = big ? 34 : 18;
     for (let i = 0; i < n; i++) {
-      const v = dir.clone().multiplyScalar(rand(1, 5)).add(new THREE.Vector3(rand(-1.5, 1.5), rand(-0.5, 2.5), rand(-1.5, 1.5)));
-      this.alpha.spawn({ pos: point, vel: v, life: rand(0.35, 0.8), size: rand(0.02, 0.05), col: new THREE.Color(0.07, 0.055, 0.05), grav: 11, floor: 0.02 });
+      const v = dir.clone().multiplyScalar(rand(1.5, big ? 8 : 6)).add(new THREE.Vector3(rand(-1.2, 1.2), rand(-0.3, 2.2), rand(-1.2, 1.2)));
+      this.alpha.spawn({ pos: point, vel: v, life: rand(0.4, 0.9), size: rand(0.018, big ? 0.05 : 0.04), col: new THREE.Color(rand(0.22, 0.38), 0.008, 0.012), grav: 12, floor: 0.02, kind: i % 2 });
     }
-    for (let i = 0; i < (big ? 4 : 2); i++) {
-      this.alpha.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(0.5, 1.6)).add(new THREE.Vector3(rand(-0.4, 0.4), rand(0, 0.5), rand(-0.4, 0.4))), life: rand(0.35, 0.7), size: rand(0.12, 0.25), grow: 0.6, col: new THREE.Color(0.16, 0.13, 0.12), alpha: 0.45, drag: 4 });
+    for (let i = 0; i < (big ? 8 : 4); i++) { // back-spatter toward the shooter
+      const v = dir.clone().multiplyScalar(-rand(0.6, 2)).add(new THREE.Vector3(rand(-0.8, 0.8), rand(0, 1.4), rand(-0.8, 0.8)));
+      this.alpha.spawn({ pos: point, vel: v, life: rand(0.3, 0.6), size: rand(0.015, 0.03), col: new THREE.Color(0.32, 0.01, 0.015), grav: 12, floor: 0.02 });
     }
-    for (let i = 0; i < (big ? 8 : 4); i++) {
-      this.add.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(0.8, 3)).add(new THREE.Vector3(rand(-1.2, 1.2), rand(0.3, 2.5), rand(-1.2, 1.2))), life: rand(0.25, 0.6), size: rand(0.02, 0.035), col: new THREE.Color(4.2, 1.5, 0.3), grav: 9, floor: 0.02 });
+    for (let i = 0; i < (big ? 5 : 2); i++) {
+      this.alpha.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(0.6, 1.8)).add(new THREE.Vector3(rand(-0.4, 0.4), rand(0, 0.5), rand(-0.4, 0.4))), life: rand(0.3, 0.6), size: rand(0.1, 0.2), grow: 0.5, col: new THREE.Color(0.17, 0.008, 0.01), alpha: 0.35, drag: 4 });
     }
-    // the husks burn: hot ember sparks from wounds
-    for (let i = 0; i < (big ? 10 : 5); i++) {
-      this.add.spawn({ pos: point, vel: dir.clone().multiplyScalar(rand(1, 4)).add(new THREE.Vector3(rand(-2, 2), rand(0, 3), rand(-2, 2))), life: rand(0.2, 0.5), size: rand(0.012, 0.022), col: new THREE.Color(4, 1.4, 0.3), grav: 6, drag: 1.5, kind: 1 });
+  }
+  // kill: a bloom of red mist that hangs for a moment
+  bloodMist(point, dir, amount = 1) {
+    for (let i = 0; i < Math.round(9 * amount); i++) {
+      const v = dir.clone().multiplyScalar(rand(0.3, 1.6)).add(new THREE.Vector3(rand(-0.7, 0.7), rand(-0.1, 0.8), rand(-0.7, 0.7)));
+      this.alpha.spawn({ pos: point.clone().add(new THREE.Vector3(rand(-0.15, 0.15), rand(-0.15, 0.15), rand(-0.15, 0.15))), vel: v, life: rand(0.5, 1.0), size: rand(0.1, 0.22), grow: rand(0.4, 0.8), col: new THREE.Color(rand(0.12, 0.2), 0.006, 0.008), alpha: 0.32, drag: 3.2, grav: 0.3 });
     }
+  }
+  // big kills: meat chunks + a burst of heavy droplets
+  gib(point, dir, n, ground) {
+    for (let i = 0; i < n; i++) {
+      const v = dir.clone().multiplyScalar(rand(2, 6)).add(new THREE.Vector3(rand(-2.5, 2.5), rand(1.5, 5), rand(-2.5, 2.5)));
+      this.gibs.spawn(point.clone().add(new THREE.Vector3(rand(-0.15, 0.15), rand(-0.15, 0.15), rand(-0.15, 0.15))), v, rand(0.03, 0.075), ground);
+    }
+    this.bloodHit(point, dir, true); this.bloodMist(point, dir, 1.6);
+  }
+  // severed stump: pulsing arterial spurts (strength 0..1)
+  artery(point, dir, strength) {
+    const v = dir.clone().multiplyScalar(rand(2, 4.5) * strength + 0.6).add(new THREE.Vector3(rand(-0.25, 0.25), rand(0.4, 1.2), rand(-0.25, 0.25)));
+    this.alpha.spawn({ pos: point, vel: v, life: rand(0.35, 0.7), size: rand(0.02, 0.04), col: new THREE.Color(rand(0.3, 0.42), 0.01, 0.015), grav: 11, floor: 0.02, kind: 1 });
   }
   // stylized ichor: hot glowing molten spray (matches the ember husks), no red gore
   ichor(point, dir, amount = 1, acid = false) {
+    if (!acid) { this.bloodHit(point, dir, true); this.bloodMist(point, dir, amount * 0.5); return; }
     const hot = acid ? new THREE.Color(1.2, 4.5, 0.6) : new THREE.Color(5, 2.0, 0.4);
     for (let i = 0; i < Math.round(14 * amount); i++) {
       const v = dir.clone().multiplyScalar(rand(0.5, 3.5)).add(new THREE.Vector3(rand(-2, 2), rand(0.5, 4), rand(-2, 2)));
@@ -262,7 +346,8 @@ export class Effects {
   // thin continuous squirt from a stump
   stumpSpray(point, dir, acid = false) {
     const v = dir.clone().multiplyScalar(rand(1.2, 2.6)).add(new THREE.Vector3(rand(-0.4, 0.4), rand(0.6, 1.8), rand(-0.4, 0.4)));
-    this.add.spawn({ pos: point, vel: v, life: rand(0.25, 0.5), size: rand(0.015, 0.03), col: acid ? new THREE.Color(1, 4, 0.5) : new THREE.Color(4.5, 1.6, 0.35), grav: 9, floor: 0.02 });
+    if (acid) this.add.spawn({ pos: point, vel: v, life: rand(0.25, 0.5), size: rand(0.015, 0.03), col: new THREE.Color(1, 4, 0.5), grav: 9, floor: 0.02 });
+    else this.alpha.spawn({ pos: point, vel: v, life: rand(0.3, 0.6), size: rand(0.018, 0.035), col: new THREE.Color(0.34, 0.01, 0.015), grav: 11, floor: 0.02, kind: 1 });
   }
   acidTrail(pos) {
     this.add.spawn({ pos, vel: new THREE.Vector3(rand(-0.3, 0.3), rand(-0.2, 0.3), rand(-0.3, 0.3)), life: rand(0.2, 0.4), size: rand(0.06, 0.12), col: new THREE.Color(0.6, 2.6, 0.3) });
@@ -287,10 +372,10 @@ export class Effects {
     const w = this.waves.find((x) => x.t >= 1) || this.waves[0];
     w.t = 0; w.r = radius; w.mesh.position.copy(point).setY(point.y + 0.06); w.mesh.visible = true;
   }
-  bloodPool(pos, size = 1, y = 0) { this.blood.add(new THREE.Vector3(pos.x, y + 0.012 + Math.random() * 0.004, pos.z), new THREE.Vector3(0, 1, 0), rand(0.6, 1.2) * size); }
+  bloodPool(pos, size = 1, y = 0) { this.blood.add(new THREE.Vector3(pos.x, y + 0.012 + Math.random() * 0.004, pos.z), new THREE.Vector3(0, 1, 0), rand(0.9, 1.6) * size); }
 
   update(dt, camera, time) {
-    this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera);
+    this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt, camera); this.gibs.update(dt, this);
     this.muzzleLight.intensity = Math.max(0, this.flashT / 0.05) * 30; this.flashT -= dt;
     this.embers.material.uniforms.time.value = time;
     for (const w of this.waves) {
@@ -300,5 +385,5 @@ export class Effects {
       w.mesh.scale.setScalar(0.5 + k * w.r); w.mesh.material.opacity = (1 - w.t) * 0.9;
     }
   }
-  clear() { this.holes.clear(); this.blood.clear(); this.acid.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
+  clear() { this.holes.clear(); this.blood.clear(); this.splat.clear(); this.gibs.clear(); this.acid.clear(); this.add.p.length = 0; this.alpha.p.length = 0; }
 }
