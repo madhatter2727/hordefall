@@ -236,7 +236,7 @@ function buildMR(M, redDotMat) {
 // so it is only visible through the glass and stays on target while the gun sways.
 export function redDotMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { axis: { value: new THREE.Vector3(0, 0, -1) }, radius: { value: 0.0021 }, brightness: { value: 1 } },
+    uniforms: { axis: { value: new THREE.Vector3(0, 0, -1) }, radius: { value: 0.0026 }, brightness: { value: 1 } },
     vertexShader: /* glsl */ `
       varying vec3 vView; varying vec2 vUv;
       void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vView = mv.xyz; gl_Position = projectionMatrix * mv; }`,
@@ -249,7 +249,7 @@ export function redDotMaterial() {
         float halo = exp(-ang / (radius * 1.6)) * 0.35;
         vec3 tint = mix(vec3(0.25, 0.6, 0.55), vec3(0.6, 0.3, 0.7), vUv.y) * 0.06;
         float edge = smoothstep(0.5, 0.42, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)));
-        vec3 col = tint + vec3(1.0, 0.08, 0.05) * (dotCore * 3.5 + halo) * brightness;
+        vec3 col = tint + vec3(1.0, 0.03, 0.02) * (dotCore * 2.2 + halo) * brightness;
         float a = (0.1 + dotCore + halo) * edge;
         gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
       }`,
