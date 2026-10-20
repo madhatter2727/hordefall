@@ -69,6 +69,15 @@ with sync_playwright() as p:
         gt(0, "game.horde.enemies.some(e => !e.dead && e.pos.distanceTo(game.player.pos) < 5.5)", 6)
         ev("(() => { const P = game.player; let best=null, bd=1e9; for (const e of game.horde.enemies) { if (e.dead || e.type.ranged) continue; const d = e.pos.distanceTo(P.pos); if (d < bd) { bd = d; best = e; } } if (best) { const dx = best.pos.x-P.pos.x, dz = best.pos.z-P.pos.z; P.yaw = Math.atan2(-dx, -dz); P.pitch = Math.atan2(best.pos.y + 0.6 - (P.pos.y + P.eyeSmooth), Math.hypot(dx, dz)); } })()")
         ev("__debug.set({ left: true, leftPressed: true })"); gt(0.06); ev("__debug.set({ left: false })"); gt(0.14); shot('action')
+    if want('flow'):
+        # natural wave flow: wave 4 brings spitters, wave 5 brings the boss
+        clear(); ev("__debug.teleport(6, 0, 14); game.horde.running = true; game.horde.wave = 3; game.horde.intermission = 0.01")
+        gt(0, "game.horde.wave === 4 && game.horde.toSpawn === 0", 40)
+        print('wave4 types', ev("JSON.stringify(game.horde.enemies.filter(e=>!e.dead).reduce((a,e)=>(a[e.key]=(a[e.key]||0)+1,a),{}))"), flush=True)
+        ev("game.horde.enemies.forEach(e => { if (!e.dead) game.horde.damage(e, 99999, 'body', e.pos.clone(), new game.player.pos.constructor(0,0,1), {id:'ar'}, 0); }); game.horde.toSpawn = 0")
+        gt(0, "game.horde.wave === 5", 12); gt(0, "!!game.horde.boss", 4)
+        print('wave5', ev("JSON.stringify({boss: __debug.bossInfo(), bar: document.getElementById('bossbar').className, remaining: game.horde.remaining()})"), flush=True)
+        clear()
     print(json.dumps(ev('__debug.info()')))
     print('ERRORS:', errors)
     b.close()
