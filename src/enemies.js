@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
-import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE } from './rig.js';
+import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE, GAIT, blendLayers } from './rig.js';
 
 // ---------------------------------------------------------------------------
 // HUSKS: skinned, mocap-animated zombies (see rig.js). Gameplay runs on a 15-joint
@@ -26,10 +26,10 @@ const BRACES = [[J.pelvis, J.lHip], [J.pelvis, J.rHip], [J.lHip, J.rHip], [J.che
   [J.lSh, J.pelvis], [J.rSh, J.pelvis], [J.lHip, J.chest], [J.rHip, J.chest], [J.lSh, J.head], [J.rSh, J.head]];
 
 export const TYPES = {
-  runner: { name: 'Husk', hp: 90, speed: 6.3, scale: 1, reach: 1.55, dmg: 14, windup: 0.3, cd: 0.95, mass: 1, points: 100, color: new THREE.Color(0.16, 0.13, 0.12), heat: 1, lean: 0.22, sever: 1 },
-  brute: { name: 'Brute', hp: 650, speed: 3.5, scale: 1.42, reach: 2.2, dmg: 34, windup: 0.55, cd: 1.7, mass: 4.5, points: 400, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.8, lean: 0.38, brute: true, sever: 2.2 },
-  spitter: { name: 'Spitter', hp: 120, speed: 4.6, scale: 0.97, reach: 1.5, dmg: 10, windup: 0.3, cd: 1.2, mass: 1, points: 175, color: new THREE.Color(0.14, 0.15, 0.11), heat: 1, lean: 0.3, hue: 1, ranged: true, bulk: 1.3, sever: 1 },
-  boss: { name: 'Colossus', hp: 5200, speed: 3.5, scale: 2.2, reach: 3.4, dmg: 30, windup: 0.6, cd: 1.5, mass: 40, points: 3000, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.4, lean: 0.34, brute: true, boss: true, sever: 0, bulk: 1.3 },
+  runner: { name: 'Husk', hp: 90, speed: 6.3, scale: 1, reach: 1.55, dmg: 14, windup: 0.3, cd: 0.95, mass: 1, points: 100, color: new THREE.Color(0.16, 0.13, 0.12), heat: 1, lean: 0.22, sever: 1, turn: 5 },
+  brute: { name: 'Brute', hp: 650, speed: 3.5, scale: 1.42, reach: 2.2, dmg: 34, windup: 0.55, cd: 1.7, mass: 4.5, points: 400, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.8, lean: 0.38, brute: true, sever: 2.2, turn: 3 },
+  spitter: { name: 'Spitter', hp: 120, speed: 4.6, scale: 0.97, reach: 1.5, dmg: 10, windup: 0.3, cd: 1.2, mass: 1, points: 175, color: new THREE.Color(0.14, 0.15, 0.11), heat: 1, lean: 0.3, hue: 1, ranged: true, bulk: 1.3, sever: 1, turn: 4.5 },
+  boss: { name: 'Colossus', hp: 5200, speed: 3.5, scale: 2.2, reach: 3.4, dmg: 30, windup: 0.6, cd: 1.5, mass: 40, points: 3000, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.4, lean: 0.34, brute: true, boss: true, sever: 0, bulk: 1.3, turn: 1.8 },
 };
 // part index groups: severing an upper limb takes the whole arm/leg
 const SEVER_GROUP = { 2: [2, 3], 3: [3], 4: [4, 5], 5: [5], 6: [6, 7], 7: [7], 8: [8, 9], 9: [9], 1: [1] };
@@ -52,6 +52,15 @@ function emberTexture() {
     x.stroke();
   }
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(2, 2); return t;
+}
+// rotate a bone by a world-space axis/angle about its own pivot
+const _wq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _rq = new THREE.Quaternion();
+function worldRotate(bone, axis, ang) {
+  bone.parent.getWorldQuaternion(_pq);
+  _rq.setFromAxisAngle(axis, ang);
+  _wq.copy(_pq).invert().multiply(_rq).multiply(_pq);
+  bone.quaternion.premultiply(_wq);
+  bone.updateMatrixWorld(true);
 }
 const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tN = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tX = new THREE.Vector3(), tY = new THREE.Vector3(), tZ = new THREE.Vector3(), tS = new THREE.Vector3();
@@ -219,6 +228,12 @@ export class Horde {
     e.attackT = -1; e.attackCd = rand(0.2, 0.6); e.leapCd = 1;
     e.growlT = rand(1, 5); e.grounded = true; e.scale = T.scale * rand(0.95, 1.06);
     e.armHeight = rand(0.75, 1.25);
+    // gait personality: phase offset, cadence/stride, limp, lurch, how hard the arms reach
+    const limp = Math.random() < (T.boss ? 0 : 0.3) ? rand(0.12, 0.3) : 0;
+    e.gait = { offset: Math.random(), cadence: 1, stride: 1, limp, limpSide: Math.random() < 0.5 ? 0.3 : Math.PI + 0.3,
+      lurch: T.boss ? 0.16 : rand(0.04, 0.2), reach: T.boss ? 0.15 : T.ranged ? 0.1 : Math.random() < 0.65 ? rand(0.5, 1.0) : rand(0, 0.25), swing: rand(0.15, 0.35),
+      armL: rand(-0.2, 0.2), armR: rand(-0.2, 0.2), walkMax: T.boss ? 1.6 : rand(3.6, 4.4), runMin: T.boss ? 0.45 : rand(0.75, 0.9), turn: T.turn ?? 4 };
+    e.gph = Math.random(); e.reachNow = 0; e.hunt = false; e.lastStep = -1;
     e.heat = T.heat * rand(0.8, 1.2);
     e.lastHit = -1; e.rest = {}; e.pooled = false; e.near = null;
     e.maxHp = e.hp; e.lost = 0; e.limbDmg = e.limbDmg || new Float32Array(10); e.limbDmg.fill(0); e.wound = e.wound || new Float32Array(10); e.wound.fill(0);
@@ -575,7 +590,7 @@ export class Horde {
       dir.addScaledVector(sep, 1.6);
       // stop at melee range
       let want = e.aware ? e.speed : e.speed * 0.2;
-      if (e.crawl) want = Math.max(1.1, e.speed * 0.22);
+      if (e.crawl) want = clamp(e.speed * 0.4, 0.55, 1.2);
       const reach = e.crawl ? 1.3 : T.reach;
       if (e.aware && dist < reach * 0.75 && Math.abs(dy) < 1.2) want = 0;
       if (T.ranged && e.charge >= 0) want = 0;
@@ -587,8 +602,21 @@ export class Horde {
       e.facePlayer = false;
       if (T.boss) want = this.bossBrain(e, dt, dist, dy, toP, dir, want);
       const dl = dir.length(); if (dl > 0) dir.divideScalar(Math.max(1, dl));
-      const acc = e.grounded ? 9 : 1.5;
-      e.vel.x = damp(e.vel.x, dir.x * want, acc, dt); e.vel.z = damp(e.vel.z, dir.z * want, acc, dt);
+      // turn toward the steering direction at a limited rate and walk where the body points,
+      // so nobody glides sideways; hard turns slow them down
+      e.hunt = e.aware && !e.outside && dist < 9;
+      const faceTo = e.aware && !e.outside && (dist < 3.2 || e.facePlayer) ? Math.atan2(toP.x, toP.z) : dl > 0.05 ? Math.atan2(dir.x, dir.z) : e.yaw;
+      let dyaw = faceTo - e.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      const turn = (e.gait.turn) * (e.stagger > 0 ? 0.3 : 1) * dt;
+      e.yaw += clamp(dyaw, -turn, turn);
+      const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
+      let mx = dir.x, mz = dir.z;
+      if (!T.ranged || dist > 18) { // strafing spitters are the exception
+        const align = clamp(fx * dir.x + fz * dir.z, 0, 1), dlen = Math.hypot(dir.x, dir.z) || 1;
+        const k = 0.8; mx = (fx * k + dir.x / dlen * (1 - k)) * (0.2 + 0.8 * align) * Math.min(1, dlen); mz = (fz * k + dir.z / dlen * (1 - k)) * (0.2 + 0.8 * align) * Math.min(1, dlen);
+      }
+      const acc = e.grounded ? 6 : 1.5;
+      e.vel.x = damp(e.vel.x, mx * want, acc, dt); e.vel.z = damp(e.vel.z, mz * want, acc, dt);
       e.kb.multiplyScalar(Math.exp(-7 * dt));
       e.prePos.copy(e.pos);
       e.pos.x += (e.vel.x + e.kb.x) * dt; e.pos.z += (e.vel.z + e.kb.z) * dt;
@@ -609,11 +637,11 @@ export class Horde {
         this.hooks.audio.play('growl', this.spatial(e, { brute: false }));
       }
       // facing + gait
-      const sp = Math.hypot(e.vel.x, e.vel.z); e.speedNow = sp;
-      const faceYaw = e.aware && (dist < 6 || e.facePlayer) ? Math.atan2(toP.x, toP.z) : sp > 0.3 ? Math.atan2(e.vel.x, e.vel.z) : e.yaw;
-      let dyaw = faceYaw - e.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
-      e.yaw += dyaw * (1 - Math.exp(-10 * dt));
-      e.phase += dt * (sp * (T.brute ? 1.5 : e.crawl ? 3.2 : 2.05) / e.scale + 0.5);
+      // stride speed = actual ground speed this frame (after collisions), measured along the body
+      const mvx = (e.pos.x - e.prePos.x) / dt, mvz = (e.pos.z - e.prePos.z) / dt;
+      const sp = Math.max(0, Math.hypot(mvx, mvz) * 0.4 + Math.max(0, mvx * Math.sin(e.yaw) + mvz * Math.cos(e.yaw)) * 0.6);
+      e.speedNow = damp(e.speedNow, Math.min(sp, e.speed * 1.9 + 1), 12, dt);
+      e.phase += dt * (e.crawl ? (e.speedNow / e.scale) * (Math.PI * 2 / 0.56) + 0.4 : sp * 2.05 / e.scale + 0.5);
       // attack
       e.attackCd -= dt;
       if (e.aware && e.attackT < 0 && e.attackCd <= 0 && dist < reach && Math.abs(dy) < 1.3 && P.alive && e.charge < 0 && (!T.boss || e.bs === 'walk')) {
@@ -900,23 +928,34 @@ export class Horde {
     const R = e.rig, T = e.type;
     if (e.crawl) { this.poseCrawl(e); if (!e.crawlRef) { e.crawlRef = true; this.crawlBase(e); } solveFromJoints(R, e.joints, e.ref); return; }
     R.root.position.copy(e.pos); R.root.rotation.set(0, e.yaw, 0); R.root.scale.setScalar(e.scale);
-    const sp = e.speedNow / e.scale;
-    let clip = 'walk', ts = 1;
-    if (e.attackT >= 0) { clip = e.attackSide ? 'attack2' : 'attack'; ts = 2.0 / (T.windup + 0.35) * (T.boss ? 0.8 : 1); }
-    else if (e.charge >= 0) { clip = 'scream'; ts = 1.6; }
-    else if (T.boss && (e.bs === 'chargeWind')) { clip = 'scream'; ts = 1.4; }
-    else if (T.boss && e.bs === 'slamWind') { clip = 'attack2'; ts = 1.25; }
+    const G = e.gait, sp = e.speedNow / e.scale; // per unit of body scale
+    // one-shot / state clips
+    let clip = null, ts = 1, start = 0;
+    if (e.attackT >= 0) { clip = e.attackSide ? 'attack2' : 'attack'; ts = 2.0 / (T.windup + 0.35) * (T.boss ? 0.8 : 1); start = 0.9; }
+    else if (e.charge >= 0) { clip = 'scream'; ts = 1.6; start = 0.4; }
+    else if (T.boss && e.bs === 'chargeWind') { clip = 'scream'; ts = 1.4; start = 0.4; }
+    else if (T.boss && e.bs === 'slamWind') { clip = 'attack2'; ts = 1.25; start = 0.9; }
     else if (T.boss && e.bs === 'stun') { clip = 'hit'; ts = 0.8; }
-    else if (T.boss && e.bs === 'slamRecover') { clip = 'idle'; ts = 1; }
-    else if (sp < 0.25) { clip = 'idle'; ts = 1; }
-    else if (sp > 2.6 && !T.brute) { clip = 'run'; ts = clamp(sp / 4.6, 0.7, 1.7); }
-    else { clip = 'walk'; ts = clamp(sp / 0.9, 0.6, T.brute ? 2.6 : 3.2); }
-    if (e.attackT >= 0 && e.anim !== clip) { e.attackSide = Math.random() < 0.5; clip = e.attackSide ? 'attack2' : 'attack'; }
-    const restart = (clip === 'attack' || clip === 'attack2' || clip === 'scream') && e.anim !== clip;
-    const a = play(R, clip, clip === 'idle' ? 0.35 : 0.18, ts, restart);
-    if (restart) a.time = clip === 'scream' ? 0.4 : 0.9; // skip the slow lead-in of the swipe
-    e.anim = clip;
+    if (e.attackT >= 0 && e.anim !== 'attack' && e.anim !== 'attack2') { e.attackSide = Math.random() < 0.5; clip = e.attackSide ? 'attack2' : 'attack'; }
+    // locomotion blend tree: idle -> walk -> run by ground speed, both stride-matched and phase-locked
+    const W = GAIT.walk, Rn = GAIT.run;
+    const walkTop = W.speed * G.walkMax, runLow = Rn.speed * G.runMin;
+    const b = T.noRun ? 0 : clamp((sp - walkTop) / Math.max(0.05, runLow - walkTop), 0, 1);
+    const cycleDist = lerp(W.speed * W.cycle, Rn.speed * Rn.cycle, b) * G.stride; // metres per full gait cycle
+    // limp: uneven cadence inside the cycle (one leg hurried, one dragged)
+    const ph = e.gph % 1;
+    const limpK = 1 + G.limp * Math.sin(ph * Math.PI * 2 + G.limpSide);
+    e.gph += dt * (sp / cycleDist) * limpK * G.cadence;
+    const idleW = clamp(1 - (sp - 0.06) / 0.22, 0, 1);
+    const targets = {};
+    if (clip) targets[clip] = 1;
+    else { targets.idle = idleW; targets.walk = (1 - idleW) * (1 - b); targets.run = (1 - idleW) * b; }
+    if (clip && e.anim !== clip) { const A = R.actions[clip]; A.enabled = true; A.reset(); A.play(); A.time = start; }
+    e.anim = clip || 'loco';
+    const ph2 = (e.gph + G.offset) % 1;
+    blendLayers(R, targets, dt, clip ? 9 : 7, clip ? null : { walk: ph2, run: ph2 }, clip ? { [clip]: ts } : { idle: 1 });
     R.mixer.update(dt);
+    this.gaitLayer(e, sp, b, ph2, dt);
     // hit reactions layered on top of the clip: torso jerk, head snap, twist
     const B = R.bones;
     if (B.Spine) B.Spine.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), clamp(e.flinch, -0.9, 0.9) * 0.8));
@@ -926,6 +965,38 @@ export class Horde {
     for (let pi = 1; pi < 10; pi++) if (e.lost & (1 << pi)) B[PART_BONE[pi]].scale.setScalar(0.0001);
     R.root.updateMatrixWorld(true);
     readJoints(R, e.joints, e.scale);
+  }
+  // procedural layer over the mocap: reaching / swinging arms, lurch, limp hip drop, heavy boss stomp
+  gaitLayer(e, sp, b, ph, dt) {
+    const R = e.rig, B = R.bones, G = e.gait, T = e.type;
+    R.root.updateMatrixWorld(true);
+    const right = tX.set(1, 0, 0).applyQuaternion(R.root.quaternion);
+    const fwd = tZ.set(0, 0, 1).applyQuaternion(R.root.quaternion);
+    const moving = clamp(sp / 0.5, 0, 1);
+    const s2 = Math.sin(ph * Math.PI * 2);
+    // arms: reach toward prey when hunting nearby, otherwise a loose swing opposite to the legs
+    e.reachNow = damp(e.reachNow || 0, e.aware && e.hunt ? G.reach : G.reach * 0.25, 3, dt);
+    const swing = G.swing * moving * (1 - 0.6 * e.reachNow);
+    const armRot = (bone, side, extra) => {
+      if (!bone || !bone.parent) return;
+      const ang = -(e.reachNow * (1.15 + extra) + swing * s2 * side);
+      worldRotate(bone, right, ang);
+    };
+    if (!(e.lost & (1 << 2))) armRot(B.LeftArm, 1, G.armL);
+    if (!(e.lost & (1 << 4))) armRot(B.RightArm, -1, G.armR);
+    // elbows bend a little when reaching so the hands claw forward instead of pointing
+    if (B.LeftForeArm && !(e.lost & (1 << 3))) worldRotate(B.LeftForeArm, right, -0.35 * e.reachNow);
+    if (B.RightForeArm && !(e.lost & (1 << 5))) worldRotate(B.RightForeArm, right, -0.35 * e.reachNow);
+    // lurch: torso pitches forward on each step + leans into the run
+    const step = Math.abs(Math.sin(ph * Math.PI * 2));
+    const pitch = G.lurch * moving * (0.55 + 0.45 * step) + 0.12 * b + (T.boss ? 0.1 * step : 0);
+    if (B.Spine1) worldRotate(B.Spine1, right, pitch);
+    // limp: hip drops and the torso rolls over the bad leg
+    if (G.limp > 0 && B.Hips) worldRotate(B.Hips, fwd, G.limp * 0.5 * moving * s2 * (G.limpSide > 1 ? 1 : -1));
+    // heavy stride: boss/brute torso dips on footfalls
+    if ((T.boss || T.brute) && B.Hips) { const sc = B.Hips.parent.getWorldScale(tS).y || 1; B.Hips.position.y -= (T.boss ? 0.045 : 0.025) * e.scale * step * moving / sc; }
+    // footfall thumps for the boss
+    if (T.boss) { const k = Math.floor(ph * 2); if (k !== e.lastStep) { e.lastStep = k; if (moving > 0.5) { this.hooks.onShake?.(0.05); } } }
   }
   // crawlers: reference pose = the bind pose mapped through the procedural crawl joints
   crawlBase(e) {

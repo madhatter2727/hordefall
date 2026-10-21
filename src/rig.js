@@ -6,6 +6,9 @@ import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 // Alive: AnimationMixer drives the skeleton, the gameplay joints are read back from bones.
 // Ragdoll / crawl / severed limbs: the bones are solved from the 15 Verlet joints instead.
 // ---------------------------------------------------------------------------
+// measured from the clips (lab/animlab.html): ground speed of the planted foot at timeScale 1, scale 1
+export const RUN_CYCLE = 25 / 30;
+export const GAIT = { walk: { speed: 0.277, cycle: 3.958 }, run: { speed: 2.64, cycle: RUN_CYCLE } };
 export const JN = { pelvis: 0, chest: 1, head: 2, lSh: 3, lEl: 4, lHa: 5, rSh: 6, rEl: 7, rHa: 8, lHip: 9, lKn: 10, lFt: 11, rHip: 12, rKn: 13, rFt: 14 };
 // gameplay joint -> bone that sits at it
 const JOINT_BONE = ['Hips', 'Neck', 'Head', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'];
@@ -82,6 +85,8 @@ export class ZombieFactory {
     // in-place clips (walk/run are authored in place; keep the death clip's travel)
     this.clips = {};
     for (const c of gltf.animations) this.clips[c.name] = c;
+    // the source run clip holds one 25-frame stride and then freezes for 3 s: keep just the stride so it loops
+    if (this.clips.run && this.clips.run.duration > 1) { this.clips.run.duration = RUN_CYCLE; this.clips.run.trim(); }
     // per-vertex body part for wound masks, from the dominant skin weight
     this.template.traverse((o) => {
       if (!o.isSkinnedMesh) return;
@@ -135,7 +140,7 @@ const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3
 export function resetRig(R) {
   for (const b of Object.values(R.bones)) { const r = R.rest[b.name]; b.position.copy(r.p); b.quaternion.copy(r.q); b.scale.copy(r.s); }
   if (R.detached) { R.detached.parent.remove(R.detached); R.bones[R.detachedParent].add(R.detached); R.detached = null; }
-  R.mixer.stopAllAction(); R.cur = null;
+  R.mixer.stopAllAction(); R.cur = null; R.manual = false; R.w = null;
   for (const s of R.stumps) s.parent?.remove(s);
   R.stumps.length = 0;
   R.u.uWound.value.fill(0); R.u.uEmber.value = 0; R.u.uDiss.value = 0; R.u.uFlash.value = 0; R.u.uHue.value = 0;
@@ -143,6 +148,10 @@ export function resetRig(R) {
 // crossfade to a named clip
 export function play(R, name, fade = 0.2, timeScale = 1, restart = false) {
   const a = R.actions[name];
+  if (R.manual) { // coming out of the hand-weighted locomotion blend: fade every layer out
+    for (const b of Object.values(R.actions)) if (b !== a && b.getEffectiveWeight() > 0) b.fadeOut(fade);
+    R.manual = false; R.cur = null;
+  }
   if (R.cur === a) { a.timeScale = timeScale; return a; }
   a.reset(); if (!restart) a.time = Math.random() * a.getClip().duration; a.timeScale = timeScale; a.enabled = true; a.setEffectiveWeight(1);
   if (R.cur) a.crossFadeFrom(R.cur, fade, false); else a.play();
@@ -235,4 +244,30 @@ export function poseLimb(R, pts) {
   // keep the collapsed body at the cut so no skin stretches across the street
   const hips = R.bones.Hips; hips.position.copy(hips.parent.worldToLocal(_v2.copy(pts[0])));
   root.updateMatrixWorld(true);
+}
+
+// Hand-weighted layers (locomotion blend trees): targets {clip: weight}; weights ease toward them and are
+// normalised so the pose never leaks toward the bind pose. Clips listed in `phased` are driven by phase (0..1).
+export function blendLayers(R, targets, dt, rate, phased, timeScales) {
+  if (!R.w || !R.manual) {
+    R.w = {};
+    for (const [k, a] of Object.entries(R.actions)) { R.w[k] = a.isRunning() ? a.getEffectiveWeight() : 0; a.stopFading(); }
+    R.manual = true; R.cur = null;
+  }
+  const k = 1 - Math.exp(-rate * dt);
+  let sum = 0;
+  for (const name of Object.keys(R.actions)) {
+    const t = targets[name] || 0;
+    R.w[name] += (t - R.w[name]) * k;
+    if (R.w[name] < 0.002 && t === 0) R.w[name] = 0;
+    sum += R.w[name];
+  }
+  for (const [name, a] of Object.entries(R.actions)) {
+    const w = sum > 0 ? R.w[name] / sum : 0;
+    if (w <= 0) { if (a.isRunning() || a.enabled) { a.enabled = false; } continue; }
+    if (!a.enabled || !a.isRunning()) { a.enabled = true; a.reset(); a.play(); if (targets.__restart === name) a.time = targets.__restartAt || 0; }
+    a.setEffectiveWeight(w);
+    if (phased && name in phased) { a.timeScale = 0; a.time = phased[name] * a.getClip().duration; }
+    else a.timeScale = timeScales?.[name] ?? 1;
+  }
 }
