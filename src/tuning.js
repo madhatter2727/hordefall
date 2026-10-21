@@ -1,0 +1,47 @@
+// ============================================================================
+// HORDEFALL wave pacing: every number that sets how hard a wave is lives here.
+// Player reference speeds: walk 5.4 m/s, sprint 8.4 m/s.
+//
+// Per wave:
+//   count     husks spawned (boss waves: the Colossus comes on top of these)
+//   gap       seconds between spawns (randomised ±50%)
+//   maxAlive  cap on living husks at once (spawning pauses at the cap)
+//   hp, dmg   multipliers on base health / hit damage
+//   shamble   walking speed of ordinary husks, m/s (randomised ±15%)
+//   runners   fraction of husks that jog   (RUNNER_SPEED)
+//   sprinters fraction of husks that sprint (SPRINTER_SPEED)
+//   brutes    how many brutes are mixed into the wave
+//   pace      multiplier on brute / spitter base speed (3.5 / 4.6 m/s)
+// Waves past the end of the table extend the last row with LATE_GROWTH.
+// ============================================================================
+export const WAVES = [
+  //       count gap  maxAlive  hp    dmg   shamble runners sprinters brutes pace
+  /* 1 */ { count: 8, gap: 2.4, maxAlive: 6, hp: 0.75, dmg: 0.6, shamble: 1.0, runners: 0, sprinters: 0, brutes: 0, pace: 0.5 },
+  /* 2 */ { count: 11, gap: 2.0, maxAlive: 8, hp: 0.85, dmg: 0.7, shamble: 1.1, runners: 0, sprinters: 0, brutes: 0, pace: 0.55 },
+  /* 3 */ { count: 14, gap: 1.7, maxAlive: 10, hp: 0.95, dmg: 0.8, shamble: 1.2, runners: 0.05, sprinters: 0, brutes: 1, pace: 0.6 },
+  /* 4 */ { count: 18, gap: 1.45, maxAlive: 12, hp: 1.0, dmg: 0.85, shamble: 1.3, runners: 0.18, sprinters: 0, brutes: 1, pace: 0.65 },
+  /* 5 */ { count: 12, gap: 1.6, maxAlive: 10, hp: 1.05, dmg: 0.9, shamble: 1.35, runners: 0.22, sprinters: 0, brutes: 0, pace: 0.7 }, // boss
+  /* 6 */ { count: 24, gap: 1.2, maxAlive: 16, hp: 1.12, dmg: 0.95, shamble: 1.45, runners: 0.3, sprinters: 0, brutes: 2, pace: 0.75 },
+  /* 7 */ { count: 27, gap: 1.05, maxAlive: 18, hp: 1.2, dmg: 1.0, shamble: 1.55, runners: 0.38, sprinters: 0, brutes: 2, pace: 0.8 },
+  /* 8 */ { count: 30, gap: 0.95, maxAlive: 20, hp: 1.28, dmg: 1.05, shamble: 1.65, runners: 0.45, sprinters: 0, brutes: 3, pace: 0.85 },
+  /* 9 */ { count: 33, gap: 0.85, maxAlive: 22, hp: 1.36, dmg: 1.1, shamble: 1.75, runners: 0.5, sprinters: 0.04, brutes: 3, pace: 0.9 },
+  /* 10 */ { count: 22, gap: 0.9, maxAlive: 22, hp: 1.45, dmg: 1.15, shamble: 1.85, runners: 0.5, sprinters: 0.1, brutes: 0, pace: 0.95 }, // boss
+  /* 11 */ { count: 38, gap: 0.7, maxAlive: 26, hp: 1.55, dmg: 1.2, shamble: 1.95, runners: 0.5, sprinters: 0.15, brutes: 4, pace: 1.0 },
+  /* 12 */ { count: 42, gap: 0.6, maxAlive: 30, hp: 1.65, dmg: 1.25, shamble: 2.0, runners: 0.5, sprinters: 0.2, brutes: 4, pace: 1.0 },
+];
+export const LATE_GROWTH = { count: 4, gap: 0.95, minGap: 0.3, maxAlive: 2, aliveCap: 42, hp: 0.1, dmg: 0.04, dmgCap: 1.6, sprinters: 0.03, sprinterCap: 0.4, brutes: 0.5 };
+export const RUNNER_SPEED = [3.0, 3.8];   // m/s, joggers from wave 3-4
+export const SPRINTER_SPEED = [5.0, 5.8]; // m/s, only late
+export const BOSS_EVERY = 5;              // boss on waves 5, 10, 15...
+export const SPITTERS = { fromWave: 4, baseChance: 0.16, perWave: 0.012, maxAlive: (w) => 2 + Math.floor(w / 4) };
+export const IDLE_CHANCE = 0.25;          // share of husks that spawn wandering, unaware
+
+export function waveParams(n) {
+  if (n <= WAVES.length) return { ...WAVES[Math.max(1, n) - 1] };
+  const last = WAVES[WAVES.length - 1], k = n - WAVES.length, g = LATE_GROWTH;
+  return {
+    count: last.count + g.count * k, gap: Math.max(g.minGap, last.gap * Math.pow(g.gap, k)), maxAlive: Math.min(g.aliveCap, last.maxAlive + g.maxAlive * k),
+    hp: last.hp + g.hp * k, dmg: Math.min(g.dmgCap, last.dmg + g.dmg * k), shamble: last.shamble, runners: last.runners,
+    sprinters: Math.min(g.sprinterCap, last.sprinters + g.sprinters * k), brutes: Math.floor(last.brutes + g.brutes * k), pace: last.pace,
+  };
+}

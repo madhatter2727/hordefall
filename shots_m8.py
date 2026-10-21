@@ -55,5 +55,12 @@ with sync_playwright() as p:
         for i in range(6): shot(f'walk-{i}'); gt(0.1)
         ev("__debug.set({right:false})")
         ev("game.horde.reset()")
+    if want('pace'):
+        info = "JSON.stringify((() => { const H = game.horde, a = H.enemies.filter(e => !e.dead); const c = {}; for (const e of a) { const k = e.key === 'runner' ? e.cls : e.key; c[k] = (c[k] || 0) + 1; } return { wave: H.wave, alive: a.length, toSpawn: H.toSpawn, mix: c, speeds: a.map(e => +e.speed.toFixed(1)).sort((x, y) => x - y), hp: a.map(e => Math.round(e.maxHp)) }; })())"
+        ev("game.horde.reset(); game.horde.start()"); ev("__debug.teleport(0, 2.4, 2)"); ev("__debug.look(Math.PI, -0.1)")
+        step = "(n) => { const H = game.horde; for (let i = 0; i < n; i++) H.update(1/30, game.time + i/30, game.camera); }"
+        ev(f"({step})(14*30)"); gt(0.3); print('wave1', ev(info)); shot('wave1')
+        ev("game.horde.reset(); game.horde.start(); game.horde.wave = 10; game.horde.nextWave()"); ev(f"({step})(12*30)"); gt(0.3); print('wave11', ev(info)); shot('wave11')
+        ev("game.horde.reset()")
     print('ERRORS:', errs[:8])
     b.close()

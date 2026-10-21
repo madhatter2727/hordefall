@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
+import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE } from './tuning.js';
 import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE, GAIT, blendLayers } from './rig.js';
 
 // ---------------------------------------------------------------------------
@@ -154,7 +155,7 @@ export class Horde {
     for (const L of this.limbs) { this.releaseLimb(L); this.limbPool.push(L); }
     this.limbs.length = 0; this.puddles.length = 0; this.boss = null; this.bossDelay = 0; this.bossWave = false;
     for (const pr of this.proj) { pr.state = 'free'; pr.mesh.visible = false; }
-    this.enemies.length = 0; this.wave = 0; this.toSpawn = 0; this.running = false; this.waveKilled = 0; this.waveTotal = 0;
+    this.enemies.length = 0; this.wave = 0; this.toSpawn = 0; this.running = false; this.waveKilled = 0; this.waveTotal = 0; this.W = null;
   }
   takeRig() { const R = this.rigPool.pop() || (() => { const r = this.factory.make(); this.scene.add(r.root); return r; })(); resetRig(R); R.root.visible = true; return R; }
   releaseRig(e) { if (!e.rig) return; resetRig(e.rig); e.rig.root.visible = false; this.rigPool.push(e.rig); e.rig = null; }
@@ -165,11 +166,12 @@ export class Horde {
   aliveCount() { return this.enemies.filter((e) => !e.dead).length; }
   nextWave() {
     this.wave++;
-    this.bossWave = this.wave % 5 === 0;
-    let n = 6 + this.wave * 5;
-    this.brutesLeft = this.wave >= 3 ? Math.floor((this.wave - 1) / 2) : 0;
-    if (this.bossWave) { n = Math.round(n * 0.45); this.brutesLeft = 0; this.bossDelay = 2.4; }
-    this.toSpawn = n; this.waveTotal = n; this.spawnT = this.bossWave ? 4 : 0.5;
+    this.bossWave = this.wave % BOSS_EVERY === 0;
+    const W = (this.W = waveParams(this.wave));
+    const n = W.count;
+    this.brutesLeft = this.bossWave ? 0 : W.brutes;
+    if (this.bossWave) this.bossDelay = 2.4;
+    this.toSpawn = n; this.waveTotal = n; this.spawnT = this.bossWave ? 4 : 1.2;
     this.hooks.onWaveStart?.(this.wave, n + (this.bossWave ? 1 : 0), this.bossWave);
   }
   spawnBoss(at) {
@@ -218,10 +220,20 @@ export class Horde {
     const T = TYPES[typeKey];
     const e = this.pool.pop() || { joints: Array.from({ length: NJ }, () => new THREE.Vector3()), prev: Array.from({ length: NJ }, () => new THREE.Vector3()), pos: new THREE.Vector3(), vel: new THREE.Vector3(), kb: new THREE.Vector3(), gatePt: new THREE.Vector3() };
     e.type = T; e.key = typeKey;
-    e.hp = T.hp * (1 + Math.max(0, this.wave - 4) * 0.06);
+    const W = this.W || waveParams(Math.max(1, this.wave));
+    e.hp = T.hp * (T.boss ? 1 : W.hp); e.dmgMul = T.boss ? 1 : W.dmg;
     e.pos.copy(at); e.vel.set(0, 0, 0); e.kb.set(0, 0, 0); e.vy = 0;
     e.yaw = Math.atan2(-at.x, -at.z); e.phase = rand(0, 6.28);
-    e.speed = T.speed * rand(0.88, 1.12) * (1 + Math.min(0.25, this.wave * 0.02));
+    // speed class: shamblers early, joggers mid, sprinters late (see tuning.js)
+    e.cls = 'shambler';
+    if (T.boss) e.speed = T.speed;
+    else if (T.brute || T.ranged) e.speed = T.speed * W.pace * rand(0.9, 1.1);
+    else {
+      const r = Math.random();
+      if (r < W.sprinters) { e.cls = 'sprinter'; e.speed = rand(...SPRINTER_SPEED); }
+      else if (r < W.sprinters + W.runners) { e.cls = 'runner'; e.speed = rand(...RUNNER_SPEED); }
+      else e.speed = W.shamble * rand(0.85, 1.15);
+    }
     e.flank = rand(-0.7, 0.7); e.speedNow = 0;
     e.dead = false; e.deadT = 0; e.dissolve = 0; e.flash = 0; e.stagger = 0;
     e.flinch = 0; e.flinchV = 0; e.headSnap = 0; e.headSnapV = 0; e.twist = 0; e.twistV = 0;
@@ -509,17 +521,18 @@ export class Horde {
         if (!this.hold) { this.intermission -= dt; if (this.intermission <= 0) { this.cleared = false; this.nextWave(); } }
       } else if (this.toSpawn > 0) {
         this.spawnT -= dt;
-        if (this.spawnT <= 0 && this.aliveCount() < 42) {
+        const W = this.W || (this.W = waveParams(Math.max(1, this.wave)));
+        if (this.spawnT <= 0 && this.aliveCount() < W.maxAlive) {
           const spawns = this.arena.spawns;
           const sp = spawns[Math.floor(Math.random() * spawns.length)];
           const brute = this.brutesLeft > 0 && Math.random() < this.brutesLeft / this.toSpawn + 0.05;
           if (brute) this.brutesLeft--;
           const at = sp.clone().add(new THREE.Vector3(rand(-2.5, 2.5), 0, rand(-2.5, 2.5)));
           let type = brute ? 'brute' : 'runner';
-          if (!brute && this.wave >= 4 && this.spittersAlive() < 2 + Math.floor(this.wave / 4) && Math.random() < 0.16 + this.wave * 0.012) type = 'spitter';
-          this.spawn(type, at, type === 'runner' && Math.random() < 0.25);
+          if (!brute && this.wave >= SPITTERS.fromWave && this.spittersAlive() < SPITTERS.maxAlive(this.wave) && Math.random() < SPITTERS.baseChance + this.wave * SPITTERS.perWave) type = 'spitter';
+          this.spawn(type, at, type === 'runner' && Math.random() < IDLE_CHANCE);
           this.toSpawn--;
-          this.spawnT = Math.max(0.12, 0.55 - this.wave * 0.035) * rand(0.5, 1.5);
+          this.spawnT = W.gap * rand(0.5, 1.5);
         }
       }
     }
@@ -651,7 +664,7 @@ export class Horde {
         const before = e.attackT; e.attackT += dt;
         if (before < T.windup && e.attackT >= T.windup) {
           this.hooks.audio.play('swing', this.spatial(e));
-          if (dist < reach + 0.45 && Math.abs(dy) < 1.4 && e.stagger <= 0) this.hooks.onPlayerHit?.(T.dmg * (e.armless ? 0.45 : e.crawl ? 0.7 : 1), e.pos, e);
+          if (dist < reach + 0.45 && Math.abs(dy) < 1.4 && e.stagger <= 0) this.hooks.onPlayerHit?.(T.dmg * (e.dmgMul ?? 1) * (e.armless ? 0.45 : e.crawl ? 0.7 : 1), e.pos, e);
         }
         if (e.attackT > T.windup + 0.35) { e.attackT = -1; e.attackCd = T.cd * rand(0.8, 1.2); }
       }
