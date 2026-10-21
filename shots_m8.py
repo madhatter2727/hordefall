@@ -62,5 +62,53 @@ with sync_playwright() as p:
         ev(f"({step})(14*30)"); gt(0.3); print('wave1', ev(info)); shot('wave1')
         ev("game.horde.reset(); game.horde.start(); game.horde.wave = 10; game.horde.nextWave()"); ev(f"({step})(12*30)"); gt(0.3); print('wave11', ev(info)); shot('wave11')
         ev("game.horde.reset()")
+    STEP = "window.__step = (n) => { const H = game.horde, T = game.throwables; for (let i = 0; i < n; i++) { game.time += 1/30; H.update(1/30, game.time, game.camera); T.update(1/30, game.time); game.fx.update(1/30, game.camera, game.time); } }"
+    KEYS = "window.__keys = (hit, down) => ({ hit: (c) => c === hit, down: (c) => c === down })"
+    ev(STEP); ev(KEYS)
+    if want('decoy'):
+        ev("game.horde.reset(); __debug.teleport(0, 2.4, -3.5); __debug.look(0, -0.22); game.throwables.reset(); game.throwables.screamers = 1")
+        gt(0.5)
+        ev("__debug.spawn(14, 16, false, 'runner', 0)"); ev("game.horde.enemies.forEach(e => { e.speed = 3.2; e.cls = 'runner'; })"); ev("__step(1)")
+        ev("game.throwables.input(1/30, __keys('KeyQ', null), true)")
+        print('thrown', ev("JSON.stringify(game.throwables.list.map(o => [o.kind, o.pos.toArray().map(v => +v.toFixed(2))]))"))
+        ev("__step(30)"); print('landed', ev("JSON.stringify(game.throwables.list.map(o => ({p: o.pos.toArray().map(v => +v.toFixed(2)), active: o.active, rest: o.rest})))"))
+        ev("__step(90)")
+        cnt = "JSON.stringify((() => { const L = game.throwables.list[0]; const a = game.horde.enemies.filter(e => !e.dead); return { alive: a.length, lured: a.filter(e => e.lured).length, near: L ? a.filter(e => e.pos.distanceTo(L.pos) < 3.5).length : -1, lureT: L ? +L.lureT.toFixed(2) : null, hp: game.player.health }; })())"
+        print('crowd', ev(cnt)); gt(0.4); shot('decoy-crowd')
+        ev("__step(45)"); print('crowd2', ev(cnt)); gt(0.3); shot('decoy-crowd2')
+        ev("(() => { let k = 0; while (game.throwables.list.length && k++ < 400) __step(1); __step(3); })()")
+        print('after', ev("JSON.stringify({alive: game.horde.aliveCount(), kills: game.kills})")); shot('decoy-boom')
+        ev("__step(20)"); gt(0.3); shot('decoy-after')
+        ev("game.horde.reset()")
+    if want('nade'):
+        ev("game.horde.reset(); __debug.teleport(0, 2.4, -3.5); __debug.look(0, -0.25); game.throwables.reset()")
+        gt(0.4)
+        ev("(() => { const V = game.player.pos.constructor; for (let i = 0; i < 7; i++) { const e = game.horde.spawn(i == 3 ? 'brute' : 'runner', new V(-3.5 + i * 1.1, 0, -12.5 - (i % 3) * 1.3), true); e.wander.copy(e.pos); e.wanderT = 99; e.speed = 0.5; } })()"); ev("__step(1)")
+        # cook 1.2 s then throw
+        ev("__debug.key('KeyG', true)"); gt(1.2)
+        print('cook', ev("JSON.stringify(game.throwables.cook)")); shot('nade-cook')
+        ev("__debug.key('KeyG', false)"); ev("__debug.frames(2)")
+        print('fuse', ev("JSON.stringify(game.throwables.list.map(o => +o.fuse.toFixed(2)))"))
+        traj = ev("(() => { const o = game.throwables.list[0], r = []; for (let i = 0; i < 200 && game.throwables.list.includes(o); i++) { __step(1); if (i % 6 == 0) r.push(o.pos.toArray().map(v => +v.toFixed(2))); } return JSON.stringify(r); })()")
+        print('traj', traj)
+        ev("__step(2)"); print('after', ev("JSON.stringify({alive: game.horde.aliveCount(), kills: game.kills})")); shot('nade-boom')
+        ev("__step(3)"); shot('nade-boom2')
+        # bounce off a wall: throw hard at the stair block
+        # danger indicator: live frag by the player's feet and one behind
+        ev("__step(60); game.horde.reset()")
+        ev("__debug.teleport(0, 0.1, 8); __debug.look(0, -0.1)"); gt(0.5)
+        ev("(() => { const V = game.player.pos.constructor, T = game.throwables; T.spawn('frag', new V(1.2, 0.3, 6.2), new V(0, 0, 0), 9); T.spawn('frag', new V(-1.5, 0.3, 11), new V(0, 0, 0), 9); })()")
+        ev("__step(10)"); gt(0.3); shot('nade-indicator')
+        ev("game.throwables.reset()")
+        # overcook: explodes in hand, hurts the player
+        ev("__debug.god(false); game.player.health = 100; game.throwables.frags = 1")
+        ev("game.throwables.input(1/30, __keys('KeyG', 'KeyG'), true)")
+        ev("(() => { for (let i = 0; i < 110 && game.throwables.cook; i++) game.throwables.input(1/30, __keys(null, 'KeyG'), true); })()")
+        print('overcook hp', ev("game.player.health"), 'cook', ev("JSON.stringify(game.throwables.cook)"))
+        ev("__debug.god(true); game.player.health = 100")
+    if want('shop'):
+        ev("__debug.pts(5000); game.openShop()"); gt(0.5); shot('shop')
+        ev("game.buy('screamer'); game.buy('frag')"); print('bought', ev("JSON.stringify([game.throwables.frags, game.throwables.screamers, game.pts])")); shot('shop2')
+        ev("game.readyUp()")
     print('ERRORS:', errs[:8])
     b.close()

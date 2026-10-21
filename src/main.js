@@ -115,7 +115,7 @@ class Game {
       explode: (p, k, o) => this.explode(p, k, o), onCount: () => (this.hudDirty = true),
     });
     // grenade held in the off hand while cooking
-    this.vmFrag = fragModel(); this.vmFrag.position.set(-0.17, -0.15, -0.36); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
+    this.vmFrag = fragModel(); this.vmFrag.scale.setScalar(0.55); this.vmFrag.position.set(-0.2, -0.16, -0.42); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
     this.vmCamera.add(this.vmFrag);
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
@@ -232,7 +232,7 @@ class Game {
     const P = this.player, pd = P.pos.clone().setY(P.pos.y + 0.9).distanceTo(p);
     if (!opts.noSelf && pd < R && P.alive) {
       const f = 1 - pd / R;
-      this.onPlayerHit(Math.round(70 * f * f + 8 * f) + (opts.inHand ? 45 : 0), p, null, { knock: 9 * f, blast: true });
+      this.onPlayerHit(Math.round(70 * f * f + 8 * f) + (opts.inHand ? 15 : 0), p, null, { knock: 9 * f, blast: true });
     }
     this.shake(clamp(1.15 * k * (1 - d / 30), 0.05, 1));
     if (d < 14 && k >= 0.8) this.hitstop = Math.max(this.hitstop, 0.06);
@@ -616,9 +616,9 @@ class Game {
       this.adsNow = ads;
       // dip the gun while the off hand cooks / throws
       this.throwPose = damp(this.throwPose || 0, A.holster ? 1 : 0, 14, dt);
-      A.root.position.y -= 0.09 * this.throwPose; A.root.rotation.x -= 0.25 * this.throwPose;
+      A.root.position.y -= 0.045 * this.throwPose; A.root.position.x += 0.03 * this.throwPose; A.root.rotation.x -= 0.12 * this.throwPose;
       this.vmFrag.visible = !!T.cook;
-      if (T.cook) this.vmFrag.position.y = -0.15 + Math.sin(this.time * 3) * 0.004;
+      if (T.cook) this.vmFrag.position.y = -0.16 + Math.sin(this.time * 3) * 0.004;
     } else if (this.state === 'dead') {
       this.deadT += dt;
       p.eyeSmooth = damp(p.eyeSmooth, 0.35, 3, dt);
