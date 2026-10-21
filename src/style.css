@@ -203,3 +203,24 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 @media (max-height: 860px) { .shop { zoom: .88; } }
 @media (max-height: 760px) { .shop { zoom: .78; } }
 @media (max-height: 640px) { .shop { zoom: .66; } }
+
+/* throwables */
+.throws { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 6px; }
+.th { display: inline-flex; align-items: center; gap: 4px; font: 600 22px/1 'Teko', sans-serif; }
+.th kbd { font: 600 11px/1 sans-serif; padding: 2px 4px; border: 1px solid rgba(255,255,255,.35); border-radius: 3px; opacity: .7; }
+.th svg { width: 20px; height: 20px; fill: none; stroke: #ffcf6a; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.th.none { opacity: .35; } .th.none svg { stroke: #fff; }
+#cook { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: 34px 0 0 -32px; display: none; text-align: center; }
+#cook.on { display: block; }
+#cook .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(#ffcf6a calc(var(--f, 1) * 360deg), rgba(255,255,255,.12) 0); -webkit-mask: radial-gradient(circle, transparent 25px, #000 26px); mask: radial-gradient(circle, transparent 25px, #000 26px); }
+#cook.hot .ring { background: conic-gradient(#ff3a2a calc(var(--f, 1) * 360deg), rgba(255,255,255,.12) 0); animation: cookpulse .25s infinite alternate; }
+#cook span { position: absolute; inset: 0; font: 600 26px/64px 'Teko', sans-serif; color: #fff; text-shadow: 0 1px 4px #000; }
+#cook em { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); white-space: nowrap; font: 600 12px 'Teko', sans-serif; letter-spacing: .2em; font-style: normal; opacity: .7; }
+@keyframes cookpulse { to { opacity: .55; } }
+#nadeind { position: absolute; inset: 0; pointer-events: none; }
+.gind { position: absolute; left: 0; top: 0; width: 42px; height: 42px; display: none; }
+.gind svg { position: absolute; inset: 8px; fill: rgba(0,0,0,.35); stroke: #fff; stroke-width: 1.8; filter: drop-shadow(0 0 4px rgba(255,60,30,var(--d,0))); }
+.gind::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(255,80,50,.9); background: rgba(255,40,20,calc(var(--d,0) * .35)); }
+.gind.hot::before { animation: cookpulse .2s infinite alternate; }
+.gind i { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-origin: 0 0; }
+.gind i::after { content: ''; position: absolute; left: 26px; top: -7px; border: 7px solid transparent; border-left: 10px solid #ff5032; }

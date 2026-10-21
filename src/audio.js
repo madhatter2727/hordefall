@@ -156,6 +156,24 @@ export class Audio {
         break;
       }
       case 'click': this.tone({ dur: 0.04, type: 'square', freq: 900, gain: 0.04 }); break;
+      // ---- throwables ----
+      case 'pin': this.burst({ dur: 0.04, type: 'bandpass', freq: 4200, q: 4, gain: 0.35 }); this.tone({ t: 0.03, dur: 0.12, freq: 3100, freqEnd: 2900, gain: 0.05 }); this.burst({ t: 0.12, dur: 0.05, type: 'bandpass', freq: 2400, q: 3, gain: 0.25 }); break;
+      case 'tick': this.tone({ dur: 0.035, type: 'square', freq: o.hot ? 1800 : 1250, gain: o.hot ? 0.07 : 0.045 }); break;
+      case 'throw': this.burst({ dur: 0.22, type: 'bandpass', freq: 500, q: 1, gain: 0.3, freqEnd: 1500 }); this.burst({ t: 0.02, dur: 0.05, type: 'bandpass', freq: 3600, q: 3, gain: 0.15 }); break;
+      case 'bounce': { const g = (o.gain ?? 1) * (0.35 + 0.65 * (o.k ?? 0.5)), pan = o.pan || 0;
+        this.burst({ dur: 0.05, type: 'bandpass', freq: o.toy ? 2600 : 1700, q: 2, gain: 0.45 * g, pan });
+        this.tone({ dur: o.toy ? 0.18 : 0.09, type: 'triangle', freq: o.toy ? r(1500, 2100) : r(900, 1300), freqEnd: o.toy ? 1200 : 700, gain: 0.08 * g, pan }); break; }
+      case 'windup': { const g = o.gain ?? 1, pan = o.pan || 0; for (let i = 0; i < 9; i++) this.burst({ t: i * 0.045, dur: 0.02, type: 'bandpass', freq: 3800 + i * 120, q: 6, gain: 0.3 * g, pan }); break; }
+      case 'cymbal': { const g = o.gain ?? 1, pan = o.pan || 0;
+        this.burst({ dur: 0.32, type: 'highpass', freq: 5200, q: 0.7, gain: 0.32 * g, pan, send: 0.2 });
+        this.burst({ dur: 0.12, type: 'bandpass', freq: 3100, q: 2.5, gain: 0.22 * g, pan });
+        this.tone({ dur: 0.25, type: 'square', freq: r(1750, 1850), gain: 0.012 * g, pan }); break; }
+      case 'jingle': { // a little music-box riff (original), alternating two bars
+        const g = (o.gain ?? 1) * 0.9, pan = o.pan || 0;
+        const A = [[784, 0], [988, 0.2], [1175, 0.4], [988, 0.6], [1319, 0.8], [1175, 1.0], [988, 1.2], [784, 1.4]];
+        const B = [[880, 0], [1047, 0.2], [1319, 0.4], [1047, 0.6], [1397, 0.8], [1319, 1.0], [1175, 1.2], [1047, 1.4]];
+        for (const [f, t] of (o.bar || 0) % 2 ? B : A) { this.tone({ t, dur: 0.3, type: 'triangle', freq: f, gain: 0.09 * g, pan, send: 0.3 }); this.tone({ t, dur: 0.12, type: 'sine', freq: f * 2, gain: 0.03 * g, pan }); }
+        break; }
     }
   }
   ricochet(pan, g) { this.tone({ t: 0.01, dur: 0.35, type: 'sine', freq: 4200 + Math.random() * 1500, freqEnd: 1400, gain: 0.06 * g, pan, send: 0.4 }); }

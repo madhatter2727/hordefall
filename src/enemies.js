@@ -83,7 +83,7 @@ export class Horde {
     this.dist = new Int16Array(nav.N * nav.N).fill(-1);
     this.flowT = 0;
     this.hash = new Map();
-    this.wave = 0; this.toSpawn = 0; this.spawnT = 0; this.intermission = 0; this.running = false;
+    this.wave = 0; this.toSpawn = 0; this.spawnT = 0; this.intermission = 0; this.running = false; this.lures = [];
     this.growlT = 0; this.alertT = 0; this.screamT = 0;
     this.limbs = []; this.limbPool = [];
     this.puddles = []; this.boss = null; this.bossDelay = 0;
@@ -186,6 +186,10 @@ export class Horde {
     this.hooks.audio.play('roar');
     this.hooks.onBoss?.(e);
     return e;
+  }
+  lureFor(e) {
+    for (const L of this.lures) { const dx = e.pos.x - L.pos.x, dz = e.pos.z - L.pos.z; if (dx * dx + dz * dz < L.r * L.r) return L; }
+    return null;
   }
   spittersAlive() { let n = 0; for (const e of this.enemies) if (!e.dead && e.type.ranged) n++; return n; }
   // gunfire wakes idle husks within earshot (closer ones react first)
@@ -556,12 +560,21 @@ export class Horde {
         continue;
       }
       const T = e.type;
-      toP.copy(P.pos).sub(e.pos); const dy = toP.y; toP.y = 0;
-      const dist = toP.length(); toP.divideScalar(dist || 1);
+      toP.copy(P.pos).sub(e.pos); let dy = toP.y; toP.y = 0;
+      let dist = toP.length(); toP.divideScalar(dist || 1);
       // idle husks shamble between random points until they see/hear the player
       if (!e.aware) {
         if (e.alertIn !== undefined) { e.alertIn -= dt; if (e.alertIn <= 0) this.wake(e); }
         if (dist < 11 && Math.abs(dy) < 3) this.wake(e);
+      }
+      // a Screamer decoy in range overrides the player as the target (the boss isn't fooled)
+      const lure = !T.boss && !e.outside && !e.dead ? this.lureFor(e) : null;
+      e.lured = !!lure;
+      if (lure) {
+        if (!e.aware) { e.aware = true; e.alertIn = undefined; }
+        if (e.lureR === undefined) e.lureR = rand(0.9, 2.3);
+        toP.copy(lure.pos).sub(e.pos); dy = toP.y; toP.y = 0;
+        dist = toP.length(); toP.divideScalar(dist || 1);
       }
       // steering
       if (!e.aware && !e.outside) {
@@ -573,10 +586,10 @@ export class Horde {
         dir.copy(e.gatePt).sub(e.pos).setY(0);
         if (dir.length() < 1.2) e.outside = false;
         dir.normalize();
-      } else if (dist < 4.5 && Math.abs(dy) < 1.2) dir.copy(toP);
+      } else if (e.lured || (dist < 4.5 && Math.abs(dy) < 1.2)) dir.copy(toP);
       else if (!this.flowDir(e, dir)) dir.copy(toP);
       // flank: bend the approach sideways when far, converge when close
-      if (e.aware && !e.outside && dist > 7) {
+      if (e.aware && !e.outside && !e.lured && dist > 7) {
         const f = e.flank * clamp((dist - 7) / 12, 0, 1);
         const c = Math.cos(f), s = Math.sin(f); dir.set(dir.x * c - dir.z * s, 0, dir.x * s + dir.z * c);
       }
@@ -593,7 +606,7 @@ export class Horde {
         }
       }
       // spitters hold a firing distance and strafe instead of rushing
-      if (T.ranged && e.aware && !e.outside && !e.crawl && dist < 18) {
+      if (T.ranged && e.aware && !e.outside && !e.crawl && !e.lured && dist < 18) {
         e.strafeT -= dt; if (e.strafeT <= 0) { e.strafe = -e.strafe; e.strafeT = rand(1.5, 3.5); }
         perp.set(-toP.z, 0, toP.x).multiplyScalar(e.strafe);
         if (dist < 8) dir.copy(toP).multiplyScalar(-1).addScaledVector(perp, 0.6);
@@ -606,12 +619,13 @@ export class Horde {
       if (e.crawl) want = clamp(e.speed * 0.4, 0.55, 1.2);
       const reach = e.crawl ? 1.3 : T.reach;
       if (e.aware && dist < reach * 0.75 && Math.abs(dy) < 1.2) want = 0;
+      if (e.lured && dist < e.lureR) want = 0;
       if (T.ranged && e.charge >= 0) want = 0;
       if (T.ranged && dist < 18 && !e.crawl) want *= 0.75;
       if (e.stagger > 0) { want *= 0.15; e.stagger -= dt; }
       if (e.attackT >= 0) want *= 0.35;
       // brutes charge when close
-      if (e.aware && T.brute && !T.boss && dist < 10 && dist > 3) want *= 1.8;
+      if (e.aware && T.brute && !T.boss && !e.lured && dist < 10 && dist > 3) want *= 1.8;
       e.facePlayer = false;
       if (T.boss) want = this.bossBrain(e, dt, dist, dy, toP, dir, want);
       const dl = dir.length(); if (dl > 0) dir.divideScalar(Math.max(1, dl));
@@ -644,7 +658,7 @@ export class Horde {
       e.vy -= 18 * dt; e.pos.y += e.vy * dt;
       if (e.pos.y <= g) { if (!e.grounded && e.vy < -4) e.stagger = 0.15; e.pos.y = g; e.vy = 0; e.grounded = true; } else if (e.pos.y > g + 0.05) e.grounded = false;
       e.leapCd -= dt;
-      if (e.aware && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.brute && !e.crawl) {
+      if (e.aware && !e.lured && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.brute && !e.crawl) {
         e.vy = Math.sqrt(2 * 18 * (dy + 0.9)); e.leapCd = 2.2;
         const tt = e.vy / 18 * 1.6; e.vel.copy(toP).multiplyScalar(Math.min(9, dist / tt + 1)); e.grounded = false;
         this.hooks.audio.play('growl', this.spatial(e, { brute: false }));
@@ -664,11 +678,11 @@ export class Horde {
         const before = e.attackT; e.attackT += dt;
         if (before < T.windup && e.attackT >= T.windup) {
           this.hooks.audio.play('swing', this.spatial(e));
-          if (dist < reach + 0.45 && Math.abs(dy) < 1.4 && e.stagger <= 0) this.hooks.onPlayerHit?.(T.dmg * (e.dmgMul ?? 1) * (e.armless ? 0.45 : e.crawl ? 0.7 : 1), e.pos, e);
+          if (!e.lured && dist < reach + 0.45 && Math.abs(dy) < 1.4 && e.stagger <= 0) this.hooks.onPlayerHit?.(T.dmg * (e.dmgMul ?? 1) * (e.armless ? 0.45 : e.crawl ? 0.7 : 1), e.pos, e);
         }
         if (e.attackT > T.windup + 0.35) { e.attackT = -1; e.attackCd = T.cd * rand(0.8, 1.2); }
       }
-      if (T.ranged && e.aware && !e.outside && P.alive && !e.crawl) this.updateSpit(e, dt, dist);
+      if (T.ranged && e.aware && !e.outside && !e.lured && P.alive && !e.crawl) this.updateSpit(e, dt, dist);
       e.spitRecoil = Math.max(0, e.spitRecoil - dt * 3);
       // ambient voices
       e.growlT -= dt;

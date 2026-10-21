@@ -34,4 +34,7 @@ export function dealPerks(levels, n = 3) {
 export const SHOP = {
   ammo: { name: 'AMMO RESUPPLY', desc: 'Refill reserve ammo for every gun you carry', cost: 400 },
   armor: { name: 'ARMOR PLATE', desc: '+50 armor (soaks 70% of each hit)', cost: 650, max: 150 },
+  // prices/caps for these two live in THROW (src/throwables.js)
+  frag: { name: 'FRAG GRENADE', desc: '+1 frag · G, hold to cook' },
+  screamer: { name: 'SCREAMER DECOY', desc: '+1 wind-up decoy · Q to throw' },
 };

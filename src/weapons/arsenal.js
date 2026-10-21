@@ -210,7 +210,7 @@ export class Arsenal {
     this.bloom = Math.max(0, this.bloom - d.bloomRecover * dt * (this.firing ? 0.3 : 1));
     if (input.mouse.leftPressed) this.buffered = 0.14;
     this.buffered -= dt;
-    const trigger = d.auto ? input.mouse.left : this.buffered > 0;
+    const trigger = this.holster ? false : d.auto ? input.mouse.left : this.buffered > 0;
     this.wantsFire = trigger;
     this.firing = false;
     if (trigger && sprinting) this.blockSprint = 0.35;

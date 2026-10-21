@@ -12,6 +12,7 @@ import { Audio } from './audio.js';
 import { Effects } from './fx/effects.js';
 import { Post } from './post.js';
 import { Horde } from './enemies.js';
+import { Throwables, THROW, fragModel } from './throwables.js';
 import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
@@ -109,6 +110,13 @@ class Game {
       onWaveEnd: (n) => this.onWaveEnd(n),
     });
 
+    this.throwables = new Throwables(scene, this.arena.colliders, {
+      horde: this.horde, audio: this.audio, camera: this.camera, player: this.player,
+      explode: (p, k, o) => this.explode(p, k, o), onCount: () => (this.hudDirty = true),
+    });
+    // grenade held in the off hand while cooking
+    this.vmFrag = fragModel(); this.vmFrag.position.set(-0.17, -0.15, -0.36); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
+    this.vmCamera.add(this.vmFrag);
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
@@ -191,7 +199,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn();
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset();
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -224,7 +232,7 @@ class Game {
     const P = this.player, pd = P.pos.clone().setY(P.pos.y + 0.9).distanceTo(p);
     if (!opts.noSelf && pd < R && P.alive) {
       const f = 1 - pd / R;
-      this.onPlayerHit(Math.round(70 * f * f + 8 * f), p, null, { knock: 9 * f, blast: true });
+      this.onPlayerHit(Math.round(70 * f * f + 8 * f) + (opts.inHand ? 45 : 0), p, null, { knock: 9 * f, blast: true });
     }
     this.shake(clamp(1.15 * k * (1 - d / 30), 0.05, 1));
     if (d < 14 && k >= 0.8) this.hitstop = Math.max(this.hitstop, 0.06);
@@ -246,7 +254,7 @@ class Game {
   }
   onWaveEnd(n) {
     this.banner(`WAVE ${n} CLEARED`, `+${250 * n} · Intermission`);
-    this.audio.play('waveEnd'); this.addScore(250 * n);
+    this.audio.play('waveEnd'); this.addScore(250 * n); this.throwables.refillWave(); this.hudDirty = true;
     this.barrels.respawn(this.player.pos);
     this.onWaveCleared?.(n);
     this.shopT = 2.6; // let the banner land, then open the shop
@@ -289,6 +297,9 @@ class Game {
     const A = this.arsenal, P = this.player, items = [];
     items.push({ key: 'ammo', name: SHOP.ammo.name, desc: SHOP.ammo.desc, cost: SHOP.ammo.cost, ok: A.weapons.some((w) => w.reserve < w.def.reserve) });
     items.push({ key: 'armor', name: SHOP.armor.name, desc: SHOP.armor.desc, cost: SHOP.armor.cost, ok: P.armor < SHOP.armor.max });
+    const T = this.throwables;
+    items.push({ key: 'frag', name: SHOP.frag.name, desc: `${SHOP.frag.desc} · ${T.frags}/${THROW.frag.max}`, cost: THROW.frag.cost, ok: T.frags < THROW.frag.max });
+    items.push({ key: 'screamer', name: SHOP.screamer.name, desc: `${SHOP.screamer.desc} · ${T.screamers}/${THROW.screamer.max}`, cost: THROW.screamer.cost, ok: T.screamers < THROW.screamer.max });
     for (const d of WEAPONS) {
       if (!d.cost || !A.all[d.id]) continue;
       const owned = A.owns(d.id);
@@ -309,6 +320,8 @@ class Game {
     this.pts -= it.cost;
     if (key === 'ammo') this.arsenal.refill();
     else if (key === 'armor') this.player.armor = Math.min(SHOP.armor.max, this.player.armor + 50);
+    else if (key === 'frag') this.throwables.frags++;
+    else if (key === 'screamer') this.throwables.screamers++;
     else if (key.startsWith('gun:')) this.arsenal.give(key.slice(4));
     this.audio.play('buy'); this.hudDirty = true;
     if (this.state === 'shop') { this.renderBuys(); const nb = $('buys').querySelector(`[data-k="${key}"]`); nb?.classList.add('flash'); }
@@ -596,8 +609,16 @@ class Game {
       const fovNow = this.camera.fov;
       p.update(dt, input, { lookScale: Math.tan((fovNow * DEG) / 2) / Math.tan((HIP_FOV * DEG) / 2), ads: A.ads > 0.5, blockSprint: A.blockSprint > 0 || A.reload?.kind === 'never', weightSpeed: 1 - (d.weight - 1) * 0.12 });
       this.placeCamera(0);
+      const T = this.throwables;
+      T.input(dt, input, p.alive);
+      A.holster = !!T.cook || T.throwAnim > 0;
       ads = A.update(dt, input, p, this.aim);
       this.adsNow = ads;
+      // dip the gun while the off hand cooks / throws
+      this.throwPose = damp(this.throwPose || 0, A.holster ? 1 : 0, 14, dt);
+      A.root.position.y -= 0.09 * this.throwPose; A.root.rotation.x -= 0.25 * this.throwPose;
+      this.vmFrag.visible = !!T.cook;
+      if (T.cook) this.vmFrag.position.y = -0.15 + Math.sin(this.time * 3) * 0.004;
     } else if (this.state === 'dead') {
       this.deadT += dt;
       p.eyeSmooth = damp(p.eyeSmooth, 0.35, 3, dt);
@@ -618,6 +639,7 @@ class Game {
     if (active) {
       this.horde.update(worldDt, this.time, this.camera);
       this.barrels.update(worldDt, this.fx, (p) => this.explode(p, 1));
+      this.throwables.update(worldDt, this.time);
       this.wallbuys.update(this.time);
       this.updateWallPrompt();
       this.fx.update(worldDt, this.camera, this.time);
@@ -693,8 +715,18 @@ class Game {
       $('pts').textContent = this.pts.toLocaleString();
       const slots = [0, 1, 2].map((i) => { const w2 = A.weapons[i]; return `<span class="slot${i === A.index ? ' sel' : ''}${w2 ? '' : ' empty'}">${i + 1}${w2 ? ' ' + w2.def.short : ''}</span>`; }).join('');
       if ($('slots').innerHTML !== slots) $('slots').innerHTML = slots;
+      const T = this.throwables;
+      $('t-frag').textContent = T.frags; $('t-scr').textContent = T.screamers;
+      $('t-frag').parentNode.classList.toggle('none', !T.frags); $('t-scr').parentNode.classList.toggle('none', !T.screamers);
     }
     $('mag').textContent = w.mag; $('reserve').textContent = w.reserve;
+    const ck = this.throwables.cook, cookEl = $('cook');
+    cookEl.classList.toggle('on', !!ck);
+    if (ck) {
+      const left = Math.max(0, THROW.frag.fuse - ck.t), f = left / THROW.frag.fuse;
+      cookEl.style.setProperty('--f', f.toFixed(3)); cookEl.classList.toggle('hot', left < 1.2);
+      $('cook-t').textContent = left.toFixed(1);
+    }
     const hint = $('hint');
     const hintText = A.reload ? 'RELOADING' : w.mag === 0 && w.reserve === 0 ? 'NO AMMO — SWAP' : w.mag <= Math.ceil(w.def.mag * 0.25) ? 'R  RELOAD' : '';
     if (hint.textContent !== hintText) hint.textContent = hintText;
