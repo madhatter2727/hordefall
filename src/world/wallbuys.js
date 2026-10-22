@@ -6,6 +6,7 @@ const SPOTS = [
   { id: 'sg', x: 8, y: 1.45, z: -18.77, ny: 0 },                // container north face
   { id: 'mr', x: 13.17, y: 1.45, z: 10.6, ny: -Math.PI / 2 },   // container west face
   { id: 'lmg', x: 18.77, y: 1.45, z: -13.2, ny: -Math.PI / 2 }, // container west face
+  { id: 'axe', x: 18.77, y: 1.45, z: -16.7, ny: -Math.PI / 2 }, // same container, fire-axe board
 ];
 
 function boardTexture(name, cost) {
@@ -21,11 +22,12 @@ function boardTexture(name, cost) {
 }
 
 export class WallBuys {
-  constructor(scene, arsenal, weapons) {
+  constructor(scene, arsenal, weapons, extras = {}) {
     this.list = [];
     const M = arsenal.models.materials, hide = new Set([M.glove, M.knuckle, M.palm, M.sleeve, M.cuff]);
     for (const s of SPOTS) {
-      const def = weapons.find((d) => d.id === s.id), model = arsenal.models[s.id];
+      const ex = extras[s.id];
+      const def = ex ? ex.def : weapons.find((d) => d.id === s.id), model = ex ? { root: ex.model } : arsenal.models[s.id];
       if (!def || !model) continue;
       const g = new THREE.Group(); g.position.set(s.x, s.y, s.z); g.rotation.y = s.ny;
       const board = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85), new THREE.MeshStandardMaterial({ map: boardTexture(def.name, def.cost), roughness: 0.92, metalness: 0 }));
@@ -36,6 +38,7 @@ export class WallBuys {
       gun.traverse((o) => { if (o.isMesh && hide.has(o.material)) o.visible = false; });
       if (model.leftHand) { const idx = model.root.children.indexOf(model.leftHand); if (idx >= 0) gun.children[idx].visible = false; }
       gun.position.set(0, 0.1, 0.07); gun.rotation.set(0, Math.PI / 2, 0); gun.scale.setScalar(s.id === 'lmg' ? 1.2 : 1.45);
+      if (ex) { gun.rotation.set(0, 0, -Math.PI / 2 - 0.12); gun.scale.setScalar(1.25); }
       // centre the gun on the board
       const box = new THREE.Box3().setFromObject(gun); const ctr = box.getCenter(new THREE.Vector3());
       gun.position.x -= ctr.x; gun.position.y += 0.1 - ctr.y;

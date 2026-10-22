@@ -186,7 +186,7 @@ export class Arsenal {
     const nW = this.weapons.length;
     if (input.mouse.wheel && nW > 1) this.select((this.index + (input.mouse.wheel > 0 ? 1 : -1) + nW) % nW);
     if (input.hit('KeyR')) this.startReload();
-    if (input.hit('KeyV') && !this.melee && !this.swap) {
+    if (input.hit('KeyV') && !this.axeOwned && !this.melee && !this.swap) {
       this.melee = { t: 0, hit: false };
       if (this.reload && this.reload.kind === 'shells') this.reload = null;
       else if (this.reload && this.reload.kind === 'mag' && this.reload.t < 0.55) { this.resetReloadPose(); this.reload = null; }
