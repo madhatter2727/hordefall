@@ -83,5 +83,15 @@ with sync_playwright() as p:
         for i, (yaw, pitch) in enumerate([(0.0, 0.12), (2.4, 0.1), (-1.9, 0.16)]):
             ev(f"__debug.look({yaw}, {pitch})"); gt(0.6); shot(f'sky-{tag}-{i}')
         ev("__debug.teleport(-16, 5.3, -8); __debug.look(0.6, 0.05)"); gt(0.6); shot(f'sky-{tag}-3')
+    if want('map'):
+        ev("game.horde.reset(); __debug.teleport(4, 0.05, 10); __debug.look(0.5, -0.05)"); gt(0.3)
+        ev("__debug.spawn(16, 12, false, 'runner')"); ev("__debug.spawn(3, 18, false, 'spitter')"); ev("__debug.spawn(6, 34, false, 'runner')")
+        ev("__debug.boss(20)")
+        ev("(() => { const V = game.player.pos.constructor, T = game.throwables; T.spawn('frag', new V(7, 0.3, 4), new V(0, 0, 0), 9); const s = T.spawn('screamer', new V(-2, 0.3, 4), new V(0, 0, 0)); })()")
+        gt(1.5); shot('map-horde')
+        pg.screenshot(path=f'{out}/m9-map-crop.png', clip={'x': 0, 'y': 0, 'width': 420, 'height': 260})
+        ms = ev("(() => { const t0 = performance.now(); for (let i = 0; i < 100; i++) { game.minimap.acc = 1; game.minimap.draw(0.04, game.player, game.horde, game.barrels, game.throwables); } return (performance.now() - t0) / 100; })()")
+        print('minimap draw ms', round(ms, 3))
+        ev("game.horde.reset(); game.throwables.reset()")
     print('ERRORS:', errs[:5])
     b.close()

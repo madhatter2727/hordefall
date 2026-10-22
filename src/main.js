@@ -502,6 +502,7 @@ class Game {
       this.onHit({ ...h, part: 'body' }, dmg, res);
     });
     if (kills >= 2) { this.feed(`<b>CLEAVE ×${kills}</b>`, 75 * kills); this.addScore(75 * kills); }
+    this.screenBlood = Math.min(this.screenBlood || 0, 0.55); // gore on the lens, but you can still see
     this.audio.play('axeHit', { n: hits.length });
     this.shake(0.3 + 0.08 * hits.length); this.hitstop = Math.max(this.hitstop, 0.085 + 0.02 * hits.length);
     this.arsenal.camKick.impulse(kind === 'lunge' ? -6 : -2, sweep * 6, sweep * 8);
@@ -659,9 +660,13 @@ class Game {
       if (X.owned && input.hit('KeyV') && !T.cook) {
         const lunge = !X.busy() && p.grounded && this.lungeTarget();
         if (X.start(lunge ? 'lunge' : null) && lunge) {
-          const f = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
-          p.vel.x = f.x * AXE.lungeSpeed; p.vel.z = f.z * AXE.lungeSpeed; this.audio.play('axeLunge');
+          this.lungeT = 0.2; this.lungeTo = lunge.t - 1.4; this.audio.play('axeLunge');
         }
+      }
+      if (this.lungeT > 0) { // dash in until we're in swinging distance
+        this.lungeT -= dt; this.lungeTo -= AXE.lungeSpeed * dt;
+        const f = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
+        if (this.lungeTo > 0) { p.vel.x = f.x * AXE.lungeSpeed; p.vel.z = f.z * AXE.lungeSpeed; }
       }
       const xev = X.update(dt);
       if (xev === 'whoosh') this.audio.play('axeSwing', { heavy: X.swing?.kind === 'lunge' });

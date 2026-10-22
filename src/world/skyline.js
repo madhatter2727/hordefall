@@ -157,7 +157,7 @@ export function buildSkyline(scene, seed = 21) {
   };
 
   // rings around the plaza: walk-ups close in, towers behind; leave the gate sight-lines a bit more open
-  const rings = [[64, 16, 20, 42, ['brick', 'stone', 'brick', 'concrete']], [92, 24, 28, 70, ['stone', 'concrete', 'brick', 'glass']], [128, 22, 45, 115, ['glass', 'concrete', 'glass', 'stone']]];
+  const rings = [[76, 16, 20, 42, ['brick', 'stone', 'brick', 'concrete']], [92, 24, 28, 70, ['stone', 'concrete', 'brick', 'glass']], [128, 22, 45, 115, ['glass', 'concrete', 'glass', 'stone']]];
   let count = 0;
   for (const [R0, n, hMin, hMax, mix] of rings) for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + (r() - 0.5) * 0.12, d = R0 + (r() - 0.5) * 14;
@@ -173,7 +173,7 @@ export function buildSkyline(scene, seed = 21) {
   for (const s of styles) {
     if (!geo[s].length) continue;
     const T = sets[s];
-    const m = new THREE.MeshStandardMaterial({ map: T.map, normalMap: T.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), emissiveMap: T.emissiveMap, emissive: C('#ffffff'), emissiveIntensity: 1.6, roughness: props[s][0], metalness: props[s][1], envMapIntensity: s === 'glass' ? 1.4 : 0.5 });
+    const m = new THREE.MeshStandardMaterial({ color: { brick: '#a99ca0', stone: '#8f8790', concrete: '#8d8790', glass: '#a8a6b4' }[s], map: T.map, normalMap: T.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), emissiveMap: T.emissiveMap, emissive: C('#ffffff'), emissiveIntensity: 1.9, roughness: props[s][0], metalness: props[s][1], envMapIntensity: s === 'glass' ? 1.4 : 0.5 });
     const mesh = new THREE.Mesh(mergeGeometries(geo[s]), m); mesh.matrixAutoUpdate = false; group.add(mesh);
   }
   const dm = new THREE.Mesh(mergeGeometries(detail), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0.1 }));
