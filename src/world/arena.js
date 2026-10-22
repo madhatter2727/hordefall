@@ -373,11 +373,12 @@ export function buildArena(scene, quality, A) {
   for (const x of [-26, -13, 13, 26]) solid(darkConcrete, 1.4, 6.6, 1.4, x, 0, -17, { surface: 'concrete' });
   solid(darkConcrete, 30, 0.9, 7, -21, 6.6, -17); solid(darkConcrete, 24, 0.9, 7, 24, 6.6, -17);
   add(rustSteel, tiledBox(30, 0.4, 0.3, 0.5), -21, 6.4, -13.6); add(rustSteel, tiledBox(24, 0.4, 0.3, 0.5), 24, 6.4, -13.6);
-  const fallen = tiledBox(9, 0.8, 6.6, 0.25); fallen.rotateZ(-0.62); fallen.translate(1.5, 3.1, -17);
+  const fallen = tiledBox(9, 1.5, 6.6, 0.25); fallen.rotateZ(-0.62); fallen.translate(1.9, 2.8, -17);
   add(darkConcrete, fallen, 0, 0, 0);
   // the collapsed span reads as a thin plank from the platform: give it a broken deck edge, rebar and a rubble heap at its foot
   { const r = mulberry(77); const lip = tiledBox(1.6, 1.3, 6.9, 0.25); lip.rotateZ(-0.62); lip.translate(4.6, 0.75, -17); add(darkConcrete, lip, 0, 0, 0);
     for (let i = 0; i < 7; i++) { const g = new THREE.CylinderGeometry(0.022, 0.022, 0.7 + r() * 0.8, 4); g.rotateZ(-0.62 + Math.PI / 2 + (r() - 0.5) * 0.5); g.translate(5.3 + r() * 0.4, 0.2 + r() * 0.5, -20 + i); add(rustSteel, g, 0, 0, 0); }
+    for (let i = 0; i < 12; i++) { const t = (i + r()) / 12 - 0.5, g = new THREE.CylinderGeometry(0.02, 0.02, 0.5 + r() * 0.9, 4); g.rotateX(Math.PI / 2 + (r() - 0.5) * 0.5); g.translate(1.9 + Math.cos(-0.62) * t * 8.6 + (r() - 0.5) * 0.3, 2.8 + Math.sin(-0.62) * t * 8.6 + (r() - 0.5) * 0.9, -13.4 - r() * 0.3); add(rustSteel, g, 0, 0, 0); }
     for (let i = 0; i < 14; i++) { const s = 0.25 + r() * 0.45; const g = new THREE.DodecahedronGeometry(s, 0); g.scale(1, 0.5 + r() * 0.4, 0.8 + r() * 0.4); g.rotateY(r() * 6); g.translate(5.4 + r() * 1.6, s * 0.3, -20.2 + r() * 6.4); add(darkConcrete, g, 0, 0, 0); } }
   for (let i = 0; i < 4; i++) colliders.push({ minX: -2 + i * 1.9, maxX: -0.1 + i * 1.9, minY: 0, maxY: 5.9 - i * 1.55, minZ: -20.3, maxZ: -13.7, walk: false, mat: 'concrete' });
   // exposed rebar sticking out of the broken deck ends
