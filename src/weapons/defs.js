@@ -93,7 +93,7 @@ export const WEAPONS = [
     id: 'hail', name: 'SKV-3 HAILSTRIKE', short: 'HAILSTRIKE', type: 'Explosive crossbow', slot: 8, crate: true, rare: true,
     auto: false, rpm: 75, pellets: 1, bolt: true,
     damage: 180, damageMin: 180, falloffStart: 80, falloffEnd: 120, headMult: 1.5, limbMult: 1, pierce: 0,
-    boom: { radius: 5, dmg: 300 }, // bolt goes off where it lands
+    boom: { radius: 5, dmg: 340 }, // bolt goes off where it lands
     mag: 5, reserve: 30, reload: 2.6, reloadEmpty: 2.9,
     hipSpread: 1.8, adsSpread: 0.0, moveSpread: 1.5, bloomPerShot: 0.4, bloomMax: 1.2, bloomRecover: 4,
     recoil: { up: 1.5, upRamp: 0, upMax: 1.5, side: 0.3, pattern: [0.1, -0.1], adsMult: 0.7, recover: 6 },

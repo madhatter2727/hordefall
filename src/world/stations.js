@@ -422,7 +422,7 @@ export class Stations {
     };
     const C = this.crate;
     if (C.at >= 0) { const c = this.crates[C.at]; if (pick(c.pos, c.normal, 0.4, 2.2) >= 0 || (C.state === 'offer' && Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z) < 2.2)) return { kind: 'crate', state: C.state, id: C.result }; }
-    const F = this.forge; if (pick(F.pos, F.normal, F.front, 2.4) >= 0) return { kind: 'forge', state: F.state };
+    const F = this.forge; if (pick(F.pos, F.normal, F.front, 2.8) >= 0) return { kind: 'forge', state: F.state };
     return null;
   }
   update(dt, t) {

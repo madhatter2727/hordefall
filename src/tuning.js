@@ -112,7 +112,7 @@ export const CRATE = {
 // ============================================================================
 export const FORGE = {
   cost: 3000, earlyCost: 5000, unlockWave: 6, time: 3.4,
-  x: -20, z: -20, ry: Math.PI / 4,
+  x: -20, z: -20.5, ry: 0,
   damage: 2.0, mag: 1.5, reserve: 2.0, rof: 1.1, headMult: 1.15,
   names: {
     ar: 'AR-7 SUPERNOVA', sg: 'KS-12 WRECKING BALL', mr: 'MR-30 HEARTSEEKER', smg: 'VX-9 KILLER BEES', lmg: 'HX-60 IRON CURTAIN',
