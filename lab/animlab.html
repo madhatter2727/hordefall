@@ -1,0 +1,20 @@
+<!doctype html><html><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+const g = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('/assets/models/zombie.glb');
+const root = g.scene; const mixer = new THREE.AnimationMixer(root);
+const bones = {}; root.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+const out = {};
+for (const c of g.animations) {
+  mixer.stopAllAction(); const a = mixer.clipAction(c); a.reset().play();
+  const N = 400, dt = c.duration / N, s = [];
+  for (let i = 0; i <= N; i++) {
+    mixer.setTime(i * dt); root.updateMatrixWorld(true);
+    const L = bones.LeftFoot.getWorldPosition(new THREE.Vector3()), R = bones.RightFoot.getWorldPosition(new THREE.Vector3()), H = bones.Hips.getWorldPosition(new THREE.Vector3());
+    s.push([i * dt, L.x, L.y, L.z, R.x, R.y, R.z, H.x, H.y, H.z]);
+  }
+  out[c.name] = { duration: c.duration, s };
+}
+window.__out = out; window.__done = true;
+</script></body></html>

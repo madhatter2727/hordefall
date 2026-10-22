@@ -1,0 +1,20 @@
+<!doctype html><html><body style="margin:0;background:#556"><script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { buildWeaponModels } from '../src/weapons/models.js';
+const q = new URLSearchParams(location.search), id = q.get('g') || 'rv', view = q.get('v') || 'side';
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(1000, 600); document.body.appendChild(r.domElement);
+r.toneMapping = THREE.ACESFilmicToneMapping;
+const s = new THREE.Scene(); s.background = new THREE.Color('#667080');
+s.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture;
+s.add(new THREE.DirectionalLight('#fff', 2).translateX(1).translateY(2).translateZ(2), new THREE.AmbientLight('#fff', 0.5));
+const M = buildWeaponModels(); const m = M[id]; s.add(m.root);
+if (q.get('crane') && m.crane) m.crane.rotation.z = +q.get('crane');
+const cam = view === 'eye' ? new THREE.PerspectiveCamera(+q.get('fov') || 45, 10/6, +q.get('near') || 0.01, 10) : new THREE.OrthographicCamera(-0.5*(+q.get('zoom')||1), 0.5*(+q.get('zoom')||1), 0.3*(+q.get('zoom')||1), -0.3*(+q.get('zoom')||1), 0.01, 10);
+if (view === 'side') { cam.position.set(1, -0.05, -0.15 * (+q.get('cz')||1)); cam.lookAt(0, -0.05, -0.15 * (+q.get('cz')||1)); }
+if (view === 'left') { cam.position.set(-1, -0.05, -0.15); cam.lookAt(0, -0.05, -0.15); }
+if (view === 'top') { cam.position.set(0, 1, -0.15); cam.lookAt(0, 0, -0.15); }
+if (view === 'eye') { cam.position.set(0, 0, +q.get('ez') || 0.3); }
+if (view === 'q') { cam.position.set(0.5, 0.25, 0.35); cam.lookAt(0, -0.05, -0.12); }
+r.render(s, cam); window.__done = true;
+</script></body></html>
