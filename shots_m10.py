@@ -18,7 +18,8 @@ with sync_playwright() as p:
     def shot(name): pg.screenshot(path=f'{out}/{name}.png'); print('shot', name, flush=True)
     def fire():
         ev("game.input.mouse.leftPressed = true; game.input.mouse.left = true"); gt(0.05); ev("game.input.mouse.left = false")
-    def freeze(ms): ev(f"document.getAnimations().forEach(a => {{ a.pause(); a.currentTime = {ms}; }})")
+    # pause just the named element's CSS animation at a given time so slow headless frames don't miss it
+    def freeze(ms, el): ev(f"document.getElementById('{el}').getAnimations().forEach(a => {{ a.pause(); a.currentTime = {ms}; }})")
     def thaw(): ev("document.getAnimations().forEach(a => a.play())")
     def tap(k, n=2): ev(f"__debug.key('{k}', true)"); ev(f"__debug.frames({n})"); ev(f"__debug.key('{k}', false)")
     ev("__debug.start(); __debug.god(true); game.horde.running = false; game.horde.reset()")
@@ -33,7 +34,7 @@ with sync_playwright() as p:
     # 2. walk over BOUNTY and REAPER -> HUD timers
     ev("__debug.teleport(-2.2, 0.05, 11.5)"); gt(0.15); ev("__debug.teleport(0, 0.05, 10.5); __debug.look(-0.6, -0.05)"); gt(0.15)
     ev("__debug.teleport(0, 0.05, 10.5)"); gt(0.4)
-    freeze(500); shot('m10-powerup-active-hud'); thaw()
+    freeze(500, 'pwann'); shot('m10-powerup-active-hud'); thaw()
     print('power', ev("JSON.stringify(game.power)"), 'instaKill', ev("game.horde.instaKill"), 'hud', ev("[...document.querySelectorAll('#powers .pw.on b')].map(e => e.textContent)"), 'announce', ev("document.getElementById('pwann-t').textContent"))
     # bounty doubles points; reaper kills a tanky brute with one body shot
     pts0 = ev("game.pts"); ev("game.addScore(100)"); print('bounty +100 ->', ev("game.pts") - pts0)
@@ -45,7 +46,7 @@ with sync_playwright() as p:
     ev("__debug.teleport(0, 0.05, 14)"); ev("__debug.boss(18)"); gt(0.8)
     boss0 = ev("JSON.stringify(__debug.bossInfo())"); alive0 = ev("game.horde.aliveCount()"); k0 = ev("game.kills"); pts0 = ev("game.pts")
     ev("game.powerups.reset(); __debug.look(0, -0.02); __debug.power('deadfall', 0, 14)"); pg.wait_for_function('game.powerups.active().length === 0', timeout=20000); gt(0.1)
-    freeze(330); shot('m10-blast'); thaw(); gt(0.5); shot('m10-blast-after')
+    freeze(330, 'pwflash'); freeze(330, 'pwann'); shot('m10-blast'); thaw(); gt(0.5); shot('m10-blast-after')
     print('deadfall: alive', alive0, '->', ev("game.horde.aliveCount()"), 'kills', ev("game.kills") - k0, 'pts', ev("game.pts") - pts0, 'boss', boss0, '->', ev("JSON.stringify(__debug.bossInfo())"))
     # 4. headshot hit marker + damage numbers
     ev("game.horde.reset(); game.power.bounty = 0.01; __debug.teleport(12, 0.05, 6)"); gt(0.4)
@@ -58,7 +59,7 @@ with sync_playwright() as p:
         ev(f"__aimAt({ids[1]}, 'head')"); gt(0.12); ev(f"__aimAt({ids[1]}, 'head')"); ev("document.getElementById('hitmarker').className = ''"); fire(); ev("__debug.frames(1)")
         if 'head' in ev("document.getElementById('hitmarker').className"): break
         for i in (ids[0], ids[2]): ev(f"__aimAt({i}, 'body')"); fire()
-    freeze(40); shot('m10-hitmarker-headshot'); thaw()
+    freeze(40, 'hitmarker'); shot('m10-hitmarker-headshot'); thaw()
     print('attempts', attempt + 1)
     ev("game.input.mouse.right = false")
     print('marker', ev("document.getElementById('hitmarker').className"), 'numbers', ev("[...document.querySelectorAll('.dn.on')].map(e => e.textContent + (e.classList.contains('head') ? 'H' : ''))"))
