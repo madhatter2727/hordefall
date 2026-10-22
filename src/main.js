@@ -19,7 +19,7 @@ import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
 import { PowerUps, POWER_TYPES, powerIconURL } from './powerups.js';
-import { POWERUPS, FEEDBACK } from './tuning.js';
+import { POWERUPS, FEEDBACK, BOSS_HIT } from './tuning.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -123,7 +123,7 @@ class Game {
     this.vmFrag = fragModel(); this.vmFrag.scale.setScalar(0.55); this.vmFrag.position.set(-0.2, -0.16, -0.42); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
     this.vmCamera.add(this.vmFrag);
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
-    this.powerups = new PowerUps(scene, { groundAt: (x, z, y) => this.horde.groundAt(x, z, y), audio: this.audio });
+    this.powerups = new PowerUps(scene, { groundAt: (x, z, y) => this.horde.groundAt(x, z, y), audio: this.audio, walkable: (p) => this.walkableNear(p) });
     this.power = { bounty: 0, reaper: 0 }; this.slowT = 0;
     this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
@@ -445,6 +445,7 @@ class Game {
   }
   onHit(h, dmg, res, quiet = false) {
     if (res.corpse) return;
+    if (h.e.type.boss && !res.killed) this.addScore(res.weak ? BOSS_HIT.weak : BOSS_HIT.armor); // every shot on the Colossus pays
     const head = h.part === 'head';
     const mk = $('hitmarker');
     mk.className = ''; void mk.offsetWidth;
@@ -521,6 +522,21 @@ class Game {
     } else if (type === 'deadfall') this.deadfall();
     this.renderPowers();
   }
+  // nearest walkable nav cell (with a route to the player) to drop a pickup on
+  walkableNear(p) {
+    const nav = this.horde.nav, F = this.horde.playerF, N = nav.N, c0 = nav.cellOf(p.x, p.z), out = this._wk || (this._wk = new THREE.Vector3());
+    out.copy(p);
+    if (c0 < 0) { out.x = clamp(p.x, -30, 30); out.z = clamp(p.z, -30, 30); return out; }
+    const ok = (c) => !nav.blocked[c] && !nav.near[c] && (!F || F.dist[c] < 0x3fffffff);
+    for (let ring = 0; ring < 8; ring++) for (let dz = -ring; dz <= ring; dz++) for (let dx = -ring; dx <= ring; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+      const x = (c0 % N) + dx, z = ((c0 / N) | 0) + dz; if (x < 0 || z < 0 || x >= N || z >= N) continue;
+      const c = z * N + x; if (!ok(c)) continue;
+      if (ring === 0) { out.y = nav.height[c]; return out; }
+      nav.center(c, out); out.y = nav.height[c]; return out;
+    }
+    return out;
+  }
   // DEADFALL: every husk on the map drops at once (the Colossus only takes heavy damage)
   deadfall() {
     const H = this.horde, P = this.player.pos, cfg = POWERUPS.deadfall, dir = this._dfDir || (this._dfDir = new THREE.Vector3());
@@ -571,9 +587,11 @@ class Game {
   onKill(e, info) {
     this.kills++; if (info.head) this.headshots++;
     const H = this.horde;
-    if (H.wave > 0 && H.toSpawn <= 0 && H.bossDelay <= 0 && H.aliveCount() === 0) this.slowT = FEEDBACK.slowmo.dur; // last husk of the wave
+    const last = H.wave > 0 && H.toSpawn <= 0 && H.bossDelay <= 0 && H.aliveCount() === 0;
+    if (last) this.slowT = FEEDBACK.slowmo.dur; // last husk of the wave
+    // every kill counts toward the wave's guaranteed drops; DEADFALL kills and the Colossus never drop themselves
+    this.powerups.maybeDrop(e.pos, H.wave, (H.waveTotal || 1) + (H.bossWave ? 1 : 0), last, !this.blasting && !e.type.boss);
     if (this.blasting) { this.hudDirty = true; return; } // DEADFALL pays a flat bonus instead
-    if (!e.type.boss) this.powerups.maybeDrop(e.pos, H.wave);
     const pts = (e.type.points + (info.head ? 50 : 0)) * (1 + Math.floor((this.horde.wave - 1) / 3) * 0.5);
     this.addScore(Math.round(pts), true);
     this.audio.play('kill'); if (info.head) this.audio.play('headshot');

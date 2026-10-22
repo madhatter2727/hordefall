@@ -3,6 +3,7 @@
 // no per-frame allocations).
 import * as THREE from 'three';
 import { POWERUPS } from './tuning.js';
+import { shouldDrop } from './droprules.js';
 
 export const POWER_TYPES = {
   bounty: { name: 'BOUNTY ×2', sub: 'Every point counts double', color: '#ffc531', timed: true },
@@ -93,16 +94,18 @@ export class PowerUps {
     }
     this.reset();
   }
-  reset() { for (const s of this.slots) { s.type = null; s.life = 0; s.root.visible = false; s.light.intensity = 0; } this.waveDrops = 0; this.gap = 0; }
-  newWave() { this.waveDrops = 0; }
-  // roll for a drop where a husk died
-  maybeDrop(pos, wave) {
-    const C = POWERUPS.chance, chance = Math.min(C.max, C.base + C.perWave * Math.max(0, wave - 1));
-    if (this.gap > 0 || this.waveDrops >= POWERUPS.perWave(wave) || Math.random() > chance) return null;
+  reset() { for (const s of this.slots) { s.type = null; s.life = 0; s.root.visible = false; s.light.intensity = 0; } this.st = { drops: 0, kills: 0, gap: 0 }; }
+  newWave() { this.st.drops = 0; this.st.kills = 0; }
+  get waveDrops() { return this.st.drops; }
+  // a husk died: maybe drop something there (random roll, or a guaranteed drop that's due; see droprules.js)
+  maybeDrop(pos, wave, total, isLast, allowed = true) {
+    this.st.gap = this.gap;
+    if (!shouldDrop(this.st, wave, total, isLast) || !allowed) return null;
     let sum = 0; for (const k in POWERUPS.weights) sum += POWERUPS.weights[k];
     let r = Math.random() * sum, type = 'bounty';
     for (const k in POWERUPS.weights) { r -= POWERUPS.weights[k]; if (r <= 0) { type = k; break; } }
-    return this.spawn(type, pos.x, pos.z, pos.y);
+    const at = this.hooks.walkable ? this.hooks.walkable(pos) : pos; // snap onto a cell the player can walk to
+    return this.spawn(type, at.x, at.z, at.y);
   }
   spawn(type, x, z, y = 0) {
     const s = this.slots.find((q) => !q.type) || this.slots.reduce((a, b) => (a.life < b.life ? a : b));
@@ -112,13 +115,13 @@ export class PowerUps {
     s.face.map = s.face.emissiveMap = this.tex[type]; s.face.needsUpdate = false;
     s.rim.color.copy(s.col); s.rim.emissive.copy(s.col);
     s.halo.material.color.copy(s.col); s.bm.material.color.copy(s.col); s.ring.material.color.copy(s.col); s.light.color.copy(s.col);
-    this.waveDrops++; this.gap = POWERUPS.minGap;
+    this.st.drops++; this.gap = POWERUPS.minGap;
     this.hooks.audio.play('powerDrop');
     return s;
   }
   // returns the type picked up this frame, if any
   update(dt, time, player) {
-    this.gap -= dt;
+    this.gap = (this.gap || 0) - dt;
     let picked = null;
     for (const s of this.slots) {
       if (!s.type) continue;

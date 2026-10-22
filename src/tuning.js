@@ -55,9 +55,11 @@ export function waveParams(n) {
 //   weights   how likely each type is when something drops
 // ============================================================================
 export const POWERUPS = {
-  chance: { base: 0.025, perWave: 0.005, max: 0.06 },
-  perWave: (w) => (w <= 2 ? 1 : w <= 6 ? 2 : 3),
-  minGap: 9, life: 22, blink: 6, pickRadius: 1.35, maxOnMap: 3,
+  chance: { base: 0.03, perWave: 0.005, max: 0.07 },
+  perWave: (w) => (w <= 3 ? 1 : w <= 7 ? 3 : w <= 11 ? 4 : 5),     // cap on drops in one wave (random + guaranteed)
+  guaranteed: (w) => (w < 4 ? 0 : w < 8 ? 1 : w < 12 ? 2 : 3),      // minimum drops per wave from wave 4 on
+  forceAt: 0.7, // if the rolls haven't paid out the guaranteed drops by 70% of the wave's kills, force them (spread out)
+  minGap: 8, life: 22, blink: 6, pickRadius: 1.35, maxOnMap: 4,
   weights: { bounty: 30, resupply: 28, reaper: 26, deadfall: 16 },
   bounty: { time: 30, mult: 2 },       // BOUNTY ×2: every point you earn counts double
   reaper: { time: 20 },                // REAPER: any hit kills an ordinary husk (the Colossus is immune)
@@ -69,3 +71,11 @@ export const FEEDBACK = {
   slowmo: { dur: 0.85, scale: 0.3, zoom: 7, pitch: 0.72 }, // last husk of a wave: seconds (real time), time scale, FOV zoom-in (deg), audio pitch
   dmgNumLife: 0.75,
 };
+
+// Stuck safety net (every enemy type). Checked once a second; each failed check (no progress while trying
+// to reach you) escalates: sidestep -> nudge along its own flow field -> hop/vault -> teleport to the nearest
+// walkable spot you can't see.
+export const STUCK = { sidestep: 2, nudge: 3, vault: 4, relocate: 7, relocateBoss: 7 };
+
+// points for every hit on the Colossus (weak points: glowing head + back core; armor: everywhere else)
+export const BOSS_HIT = { weak: 20, armor: 5 };

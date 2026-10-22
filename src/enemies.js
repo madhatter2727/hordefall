@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
-import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE } from './tuning.js';
+import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE, STUCK } from './tuning.js';
 import { NavGrid } from './nav.js';
 import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE, GAIT, blendLayers } from './rig.js';
 
@@ -64,7 +64,7 @@ function worldRotate(bone, axis, ang) {
   bone.quaternion.premultiply(_wq);
   bone.updateMatrixWorld(true);
 }
-const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tN = new THREE.Vector3();
+const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tD = new THREE.Vector3(), tN = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tX = new THREE.Vector3(), tY = new THREE.Vector3(), tZ = new THREE.Vector3(), tS = new THREE.Vector3();
 
 export class Horde {
@@ -81,7 +81,9 @@ export class Horde {
     this.enemies = [];
     // flow field
     this.nav = new NavGrid(arena.colliders, ARENA.half, 0.5);
-    this.flowT = 0; this.playerF = null; this.lureF = null;
+    // the Colossus (2.2x scale, ~0.7 m body radius, 3.5 m tall, can only climb ~1.2 m) routes on its own grid
+    this.navBig = new NavGrid(arena.colliders, ARENA.half, 0.5, { r: 0.75, climb: 1.25, head: 3.6 });
+    this.flowT = 0; this.playerF = null; this.lureF = null; this.playerFBig = null;
     this.navStats = { sidesteps: 0, vaults: 0, climbs: 0, respawns: 0, builds: 0, buildMs: 0 };
     this._v = new THREE.Vector3();
     this.hash = new Map();
@@ -273,7 +275,7 @@ export class Horde {
     e.crawl = false; e.crawlRef = false; e.armless = false; e.stumps = []; e.facePlayer = false;
     e.spitCd = rand(1.2, 2.5); e.charge = -1; e.orb = null; e.strafe = Math.random() < 0.5 ? -1 : 1; e.strafeT = rand(1.5, 3); e.spitRecoil = 0;
     e.bs = 'walk'; e.bt = 0; e.chargeCd = 3; e.slamCd = 2; e.stunDur = 1; e.chargeDir = e.chargeDir || new THREE.Vector3(); e.chargeHit = false; e.prePos = e.prePos || new THREE.Vector3();
-    e.stk = { t: 0, x: at.x, z: at.z, fd: 1e9, n: 0, side: 1, sideT: 0 }; e.navNext = -1; e.navDh = 0; e.respawned = 0;
+    e.big = T.scale > 1.8; e.stk = { t: 0, x: at.x, z: at.z, fd: 1e9, n: 0, side: 1, sideT: 0 }; e.navNext = -1; e.navDh = 0; e.respawned = 0;
     e.aware = !idle; e.alertIn = undefined; e.wander = new THREE.Vector3(rand(-28, 28), 0, rand(-28, 28)); e.wanderT = rand(4, 9);
     // walk in through the nearest gate
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
@@ -310,6 +312,7 @@ export class Horde {
     if (!this.playerF || (pc !== this.playerF.cell && this.navCd <= 0) || this.flowT <= 0) { // at most ~5 rebuilds/s
       const t0 = performance.now();
       this.playerF = nav.build(P.pos.x, P.pos.z, P.pos.y, "player");
+      if (this.boss && !this.boss.dead) this.playerFBig = this.navBig.build(P.pos.x, P.pos.z, P.pos.y, 'playerBig');
       this.navStats.builds++; this.navStats.buildMs = performance.now() - t0; this.flowT = 2; this.navCd = 0.2;
     }
     const L = this.lures[0];
@@ -317,8 +320,10 @@ export class Horde {
     else this.lureF = null;
   }
   // steer along the flow field; remembers the next cell so the caller can climb/vault into it
+  navOf(e) { return e.big ? this.navBig : this.nav; }
+  fieldOf(e) { return e.lured ? this.lureF : e.big ? (this.playerFBig || (this.playerFBig = this.navBig.build(this.player.pos.x, this.player.pos.z, this.player.pos.y, 'playerBig'))) : this.playerF; }
   navDir(e, F, out) {
-    const nav = this.nav, c = nav.next(F, e.pos.x, e.pos.z, e.pos.y);
+    const nav = this.navOf(e), c = nav.next(F, e.pos.x, e.pos.z, e.pos.y);
     e.navNext = c;
     if (c < 0) return false;
     const dh = nav.height[c] - e.pos.y;
@@ -342,27 +347,78 @@ export class Horde {
     }
     return best;
   }
+  // nearest walkable cell (on this enemy's own grid, with a route to the player) that the player can't see:
+  // the last-resort relocation for anything that is hopelessly stuck
+  hiddenCell(e, out, hidden = true) {
+    const nav = this.navOf(e), F = this.fieldOf(e), P = this.player, N = nav.N, c0 = nav.cellOf(e.pos.x, e.pos.z);
+    if (!F || c0 < 0) return null;
+    const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), eye = tC.set(P.pos.x, P.pos.y + 1.6, P.pos.z), cx0 = c0 % N, cz0 = (c0 / N) | 0;
+    for (let ring = hidden ? 3 : 1; ring < 60; ring++) {
+      let best = -1, bd = 0x7fffffff;
+      for (let dz = -ring; dz <= ring; dz++) for (let dx = -ring; dx <= ring; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+        const x = cx0 + dx, z = cz0 + dz; if (x < 0 || z < 0 || x >= N || z >= N) continue;
+        const c = z * N + x; if (nav.blocked[c] || nav.near[c] || F.dist[c] >= 0x3fffffff || F.dist[c] >= bd) continue;
+        nav.center(c, out); out.y = nav.height[c];
+        const vx = out.x - P.pos.x, vz = out.z - P.pos.z, d = Math.hypot(vx, vz);
+        if (Math.abs(out.x) > 34 || Math.abs(out.z) > 34) continue;
+        if (!hidden) { best = c; bd = F.dist[c]; continue; }
+        if (d < 7) continue;
+        const inView = (vx * fx + vz * fz) / d > 0.35 && this.los(eye, tD.set(out.x, out.y + 1.2, out.z));
+        if (inView) continue;
+        best = c; bd = F.dist[c];
+      }
+      if (best >= 0) { nav.center(best, out); out.y = nav.height[best]; return out; }
+    }
+    return null;
+  }
+  place(e, at) { e.pos.set(at.x, at.y, at.z); e.prePos.copy(e.pos); e.vel.set(0, 0, 0); e.kb.set(0, 0, 0); e.vy = 0; e.grounded = true; const S = e.stk; S.n = 0; S.x = e.pos.x; S.z = e.pos.z; S.fd = 1e9; }
+  // centre of the body inside a solid box that rises well above its feet
+  embedded(e) {
+    const p = e.pos;
+    for (const c of this.colliders) if (!c.ground && c.maxY > p.y + 0.6 && c.minY < p.y + 1 && p.x > c.minX + 0.05 && p.x < c.maxX - 0.05 && p.z > c.minZ + 0.05 && p.z < c.maxZ - 0.05) return true;
+    return false;
+  }
   unstick(e, dir, dt, dist) {
     // progress check once a second: did we get any closer (by flow cost) or move at all?
-    const S = e.stk;
+    const S = e.stk, T = e.type, ST = STUCK;
     S.t += dt;
     if (S.t < 1) return;
     const moved = Math.hypot(e.pos.x - S.x, e.pos.z - S.z);
-    const F = e.lured ? this.lureF : this.playerF, c = this.nav.cellOf(e.pos.x, e.pos.z);
+    const nav = this.navOf(e), F = this.fieldOf(e), c = nav.cellOf(e.pos.x, e.pos.z);
     const fd = F && c >= 0 ? F.dist[c] : 0;
-    const progressing = moved > 0.45 || fd < S.fd - 8;
-    const trying = e.aware && !e.outside && e.attackT < 0 && (dist > 2.2 || Math.abs(this.player.pos.y - e.pos.y) > 1.2) && !(e.type.ranged && dist < 18) && e.charge < 0 && e.stagger <= 0 && !(e.lured && dist < 3);
+    const progressing = moved > 0.45 * Math.min(1.5, e.scale) || fd < S.fd - 8;
+    const busy = e.attackT >= 0 || e.charge >= 0 || e.stagger > 0 || (T.boss && e.bs !== 'walk');
+    const trying = e.aware && !e.outside && !busy && (dist > Math.max(2.2, T.reach * 0.95) || Math.abs(this.player.pos.y - e.pos.y) > 1.2) && !(T.ranged && dist < 18) && !(e.lured && dist < 3);
     S.t = 0; S.x = e.pos.x; S.z = e.pos.z; S.fd = fd;
     if (!e.aware && moved < 0.3) { e.wander.set(rand(-28, 28), 0, rand(-28, 28)); return; }
+    // wedged inside solid geometry (shoved into the stairs by a charge or a crowd) or standing where its own grid
+    // says it can't be: put it on the nearest walkable cell right away instead of waiting out the escalation
+    const embedded = this.embedded(e), offGrid = c < 0 || nav.blocked[c] || fd >= 0x3fffffff;
+    if ((embedded || offGrid) && !progressing && e.aware) {
+      S.bad = (S.bad || 0) + 1;
+      if (embedded || S.bad >= 3) { const at = this.hiddenCell(e, tB, false); if (at) { this.place(e, at); this.navStats.unwedges = (this.navStats.unwedges || 0) + 1; S.bad = 0; return; } }
+    } else S.bad = 0;
+    if (busy && !progressing) return; // mid-attack / stunned: hold the escalation, don't reset it
     if (progressing || !trying) { S.n = 0; return; }
     S.n++;
-    if (S.n === 2) { S.side = Math.random() < 0.5 ? -1 : 1; S.sideT = 0.9; this.navStats.sidesteps++; }
-    else if (S.n === 3 || S.n === 5) { if (e.grounded && !e.type.boss) { e.vy = 7.2; e.grounded = false; e.vel.addScaledVector(dir, 2.5); this.navStats.vaults++; } }
-    else if (S.n >= 7 && !e.type.boss) { // last resort: quietly re-enter through a gate the player can't see
-      const sp = this.hiddenSpawn();
-      e.pos.set(sp.x + rand(-2, 2), 0, sp.z + rand(-2, 2)); e.vel.set(0, 0, 0); e.vy = 0;
-      const g = Math.abs(sp.x) > Math.abs(sp.z) ? new THREE.Vector3(Math.sign(sp.x) * (ARENA.half - 1.5), 0, clamp(sp.z, -2.5, 2.5)) : new THREE.Vector3(clamp(sp.x, -2.5, 2.5), 0, Math.sign(sp.z) * (ARENA.half - 1.5));
-      e.gatePt.copy(g); e.outside = true; S.n = 0; e.respawned = (e.respawned || 0) + 1; this.navStats.respawns++;
+    if (S.n === ST.sidestep) { S.side = Math.random() < 0.5 ? -1 : 1; S.sideT = 0.9; this.navStats.sidesteps++; }
+    else if (S.n === ST.nudge) { // shove toward the best neighbouring cell on its own flow field (an alternate route)
+      const nb = F && c >= 0 ? nav.next(F, e.pos.x, e.pos.z, e.pos.y) : -1;
+      if (nb >= 0) { nav.center(nb, this._v); tA.set(this._v.x - e.pos.x, 0, this._v.z - e.pos.z).normalize(); e.kb.addScaledVector(tA, 3.5); if (nav.height[nb] - e.pos.y > 0.4 && e.grounded) { e.vy = Math.sqrt(2 * 18 * (nav.height[nb] - e.pos.y + 0.5)); e.grounded = false; } }
+      this.navStats.nudges = (this.navStats.nudges || 0) + 1;
+    }
+    else if (S.n === ST.vault || S.n === ST.vault + 2) { if (e.grounded) { e.vy = T.boss ? 6 : 7.2; e.grounded = false; e.vel.addScaledVector(dir, 2.5); this.navStats.vaults++; } }
+    else if (S.n >= (T.boss ? ST.relocateBoss : ST.relocate)) { // last resort: teleport to the nearest walkable cell out of the player's view
+      const at = this.hiddenCell(e, tB);
+      if (at) {
+        this.place(e, at); e.respawned = (e.respawned || 0) + 1; this.navStats.respawns++;
+      } else if (!T.boss) { // nowhere hidden inside: re-enter through a gate the player can't see
+        const sp = this.hiddenSpawn();
+        e.pos.set(sp.x + rand(-2, 2), 0, sp.z + rand(-2, 2)); e.vel.set(0, 0, 0); e.vy = 0;
+        const g = Math.abs(sp.x) > Math.abs(sp.z) ? new THREE.Vector3(Math.sign(sp.x) * (ARENA.half - 1.5), 0, clamp(sp.z, -2.5, 2.5)) : new THREE.Vector3(clamp(sp.x, -2.5, 2.5), 0, Math.sign(sp.z) * (ARENA.half - 1.5));
+        e.gatePt.copy(g); e.outside = true; S.n = 0; e.respawned = (e.respawned || 0) + 1; this.navStats.respawns++;
+      }
     }
   }
   groundAt(x, z, y, r = 0.15) {
@@ -397,7 +453,9 @@ export class Horde {
     for (const e of this.enemies) {
       if (e.dead && (e.deadT > 0 || !e.type.sever)) continue; // the rest of a blast still tears into a fresh corpse
       c.copy(e.pos); c.y += 0.95 * e.scale;
-      if (raySphere(o, d, c, 1.25 * e.scale, maxT) < 0 && c.distanceToSquared(o) > 2.5) continue;
+      // broad phase: skip only if the ray misses the bounding sphere entirely. (It used to also skip when the
+      // shooter stood *inside* the sphere, which for the 2.2x Colossus meant every shot from 1.6-2.75 m vanished.)
+      const br = 1.25 * e.scale; if (c.distanceToSquared(o) > br * br && raySphere(o, d, c, br, maxT) < 0) continue;
       let best = maxT, part = null, hp = -1;
       for (let pi = 0; pi < this.parts.length; pi++) {
         const P = this.parts[pi];
@@ -634,8 +692,8 @@ export class Horde {
         dir.normalize();
       } else {
         // straight at the target when there's a clear walk, otherwise follow the flow field round obstacles
-        const F = e.lured ? this.lureF : this.playerF, tgt = e.lured ? lure.pos : P.pos;
-        if (dist < 7 && Math.abs(dy) < 0.7 && this.nav.clear(e.pos.x, e.pos.z, tgt.x, tgt.z, e.pos.y)) dir.copy(toP);
+        const F = this.fieldOf(e), tgt = e.lured ? lure.pos : P.pos;
+        if (dist < 7 && Math.abs(dy) < 0.7 && this.navOf(e).clear(e.pos.x, e.pos.z, tgt.x, tgt.z, e.pos.y)) dir.copy(toP);
         else if (!F || !this.navDir(e, F, dir)) dir.copy(toP);
       }
       // flank: bend the approach sideways when far, converge when close
@@ -710,7 +768,7 @@ export class Horde {
       if (e.pos.y <= g) { if (!e.grounded && e.vy < -4) e.stagger = 0.15; e.pos.y = g; e.vy = 0; e.grounded = true; } else if (e.pos.y > g + 0.05) e.grounded = false;
       e.leapCd -= dt;
       if (e.aware && e.grounded && e.navNext >= 0 && e.navDh > 0.6 && e.leapCd <= 0 && !e.crawl) {
-        this.nav.center(e.navNext, this._v);
+        this.navOf(e).center(e.navNext, this._v);
         const hx = this._v.x - e.pos.x, hz = this._v.z - e.pos.z, hd = Math.hypot(hx, hz);
         if (hd < 0.95) { // hop up onto the prop / container
           e.vy = Math.sqrt(2 * 18 * (e.navDh + 0.55)); e.grounded = false; e.leapCd = 0.8;

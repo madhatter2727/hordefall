@@ -6,11 +6,15 @@ const STEP = 0.6, CLIMB = 2.7, TALL = 3.3;
 const C_STRAIGHT = 10, C_DIAG = 14, C_CLIMB = 70, C_DROP = 12, C_NEAR = 9;
 
 export class NavGrid {
-  constructor(colliders, half, cell = 0.5) {
+  // opts: r = agent radius for clearance, climb = tallest ledge it can get up, head = head room it needs.
+  // A big agent (the Colossus) gets its own grid: wider clearance, low climb, tall head room, so its flow
+  // field never routes it through a gap or onto a ledge its body can't actually use.
+  constructor(colliders, half, cell = 0.5, opts = {}) {
     this.half = half; this.cell = cell;
     const N = (this.N = Math.round((half * 2) / cell));
     this.height = new Float32Array(N * N); this.blocked = new Uint8Array(N * N); this.near = new Uint8Array(N * N);
-    const r = 0.3; // agent radius for clearance
+    const r = opts.r ?? 0.3, head = opts.head ?? 1.7, big = !!opts.r && opts.r > 0.3;
+    this.climb = opts.climb ?? CLIMB;
     for (let gz = 0; gz < N; gz++) for (let gx = 0; gx < N; gx++) {
       const x = (gx + 0.5) * cell - half, z = (gz + 0.5) * cell - half, i = gz * N + gx;
       let floor = 0, block = 0, near = 0;
@@ -24,7 +28,8 @@ export class NavGrid {
       for (const c of colliders) {
         if (c.ground) continue;
         if (x < c.minX - r || x > c.maxX + r || z < c.minZ - r || z > c.maxZ + r) continue;
-        if (c.maxY > TALL && c.minY < floor + 1.7) block = 1;
+        if (c.maxY > TALL && c.minY < floor + head) block = 1;
+        else if (big && c.maxY > floor + this.climb && c.minY < floor + head) block = 1; // a ledge too tall for it to climb, within its body radius
         else if (c.maxY <= TALL && c.maxY > floor + 0.1 && !c.walk) near = 1; // hugging a prop: allowed but discouraged
       }
       this.height[i] = floor; this.blocked[i] = block; this.near[i] = near;
@@ -67,7 +72,7 @@ export class NavGrid {
         if (diag && (this.blocked[cz * N + nx] || this.blocked[nz * N + cx])) continue; // no corner cutting
         // agent moves nb -> c
         const dh = hc - H[nb];
-        if (dh > CLIMB) continue;
+        if (dh > this.climb) continue;
         let w = diag ? C_DIAG : C_STRAIGHT;
         if (dh > STEP) w += C_CLIMB; else if (dh < -STEP) w += C_DROP;
         if (this.near[c]) w += C_NEAR;
@@ -91,7 +96,7 @@ export class NavGrid {
       const nb = nz * N + nx;
       if (this.blocked[nb] || dist[nb] >= 0x3fffffff) continue;
       if (dx && dz && (this.blocked[cz * N + nx] || this.blocked[nz * N + cx])) continue;
-      const dh = H[nb] - y; if (dh > CLIMB) continue;
+      const dh = H[nb] - y; if (dh > this.climb) continue;
       const s = dist[nb];
       if (s < best) { best = s; bi = nb; }
     }
