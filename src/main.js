@@ -18,6 +18,8 @@ import { Minimap } from './minimap.js';
 import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
+import { PowerUps, POWER_TYPES, powerIconURL } from './powerups.js';
+import { POWERUPS, FEEDBACK } from './tuning.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -103,12 +105,13 @@ class Game {
       assets, player: this.player, fx: this.fx, audio: this.audio,
       onPlayerHit: (dmg, from, e) => this.onPlayerHit(dmg, from, e),
       onKill: (e, info) => this.onKill(e, info),
-      onWaveStart: (n, count, boss) => boss ? this.banner(`BOSS WAVE ${n}`, 'Something big is coming', 'boss') : this.banner(`WAVE ${n}`, `${count} hostiles inbound`),
+      onBlastHit: (e, dmg, res, point) => this.onHit({ e, part: 'body', point }, dmg, res, true),
+      onWaveStart: (n, count, boss) => (this.powerups?.newWave(n), boss) ? this.banner(`BOSS WAVE ${n}`, 'Something big is coming', 'boss') : this.banner(`WAVE ${n}`, `${count} hostiles inbound`),
       onBoss: (e) => { this.banner('THE COLOSSUS', 'Armored. Hit the glowing head and back core', 'boss'); this.shake(0.4); $('bossbar').classList.add('on'); },
       onBossDead: () => { this.banner('COLOSSUS DOWN', '+3000', 'boss'); this.shake(0.8); this.hitstop = 0.25; $('bossbar').classList.remove('on'); },
       onShake: (a) => this.shake(a),
       onAcid: (dmg, from, tick) => this.onAcid(dmg, from, tick),
-      onSever: (e, name) => { if (!e.dead || name === 'head') this.feed(name === 'head' ? '<b>DECAPITATED</b>' : '<b>DISMEMBERED</b>', 25); this.addScore(25); },
+      onSever: (e, name) => { if (this.blasting) return; if (!e.dead || name === 'head') this.feed(name === 'head' ? '<b>DECAPITATED</b>' : '<b>DISMEMBERED</b>', 25); this.addScore(25); },
       onWaveEnd: (n) => this.onWaveEnd(n),
     });
 
@@ -120,6 +123,8 @@ class Game {
     this.vmFrag = fragModel(); this.vmFrag.scale.setScalar(0.55); this.vmFrag.position.set(-0.2, -0.16, -0.42); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
     this.vmCamera.add(this.vmFrag);
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
+    this.powerups = new PowerUps(scene, { groundAt: (x, z, y) => this.horde.groundAt(x, z, y), audio: this.audio });
+    this.power = { bounty: 0, reaper: 0 }; this.slowT = 0;
     this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
@@ -202,7 +207,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.arsenal.bladeOut = false;
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -242,6 +247,7 @@ class Game {
   }
   // ------------------------------------------------------------ points, perks, intermission shop
   addScore(n, kill = false) {
+    if (this.power.bounty > 0) n *= POWERUPS.bounty.mult; // BOUNTY ×2
     this.score += n; this.pts += Math.round(kill ? n * this.ptsMul : n); this.hudDirty = true;
   }
   applyPerks() {
@@ -437,15 +443,15 @@ class Game {
     }
     if (dist < 4.2) { this.screenBlood = Math.min(1, (this.screenBlood || 0) + (violent ? 1 : 0.7)); this.post.u.bloodSeed.value = Math.random(); }
   }
-  onHit(h, dmg, res) {
+  onHit(h, dmg, res, quiet = false) {
     if (res.corpse) return;
     const head = h.part === 'head';
     const mk = $('hitmarker');
     mk.className = ''; void mk.offsetWidth;
-    mk.className = res.killed ? 'kill' : head || res.weak ? 'head' : res.armor ? 'armor' : 'hit';
-    if (!res.killed && !res.armor && !(this.pelletMode && this.pelletSounded)) { this.audio.play(head || res.weak ? 'headshot' : 'hit'); this.pelletSounded = this.pelletMode; }
+    mk.className = res.killed ? (head || res.weak ? 'kill head' : 'kill') : head || res.weak ? 'head' : res.armor ? 'armor' : 'hit';
+    if (!quiet && !res.killed && !res.armor && !(this.pelletMode && this.pelletSounded)) { this.audio.play(head || res.weak ? 'headshot' : 'hit'); this.pelletSounded = this.pelletMode; }
     if (!this.dmgNumsOn) return;
-    if (this.pelletMode) { // shotgun: one number per target per shot
+    if (this.pelletMode && !quiet) { // shotgun: one number per target per shot
       const a = this.pelletAcc.get(h.e) || { dmg: 0, point: h.point, head: false, killed: false };
       a.dmg += dmg; a.head ||= head; a.killed ||= res.killed; this.pelletAcc.set(h.e, a);
     } else this.damageNumber(h.point, Math.round(dmg), head || res.weak, res.killed);
@@ -490,8 +496,84 @@ class Game {
     this.shake(0.3 + 0.08 * hits.length); this.hitstop = Math.max(this.hitstop, 0.085 + 0.02 * hits.length);
     this.arsenal.camKick.impulse(kind === 'lunge' ? -6 : -2, sweep * 6, sweep * 8);
   }
+  // ------------------------------------------------------------ power-ups
+  updatePowers(dt) {
+    const got = this.powerups.update(dt, this.time, this.player);
+    if (got) this.applyPower(got);
+    for (const k of ['bounty', 'reaper']) {
+      if (this.power[k] <= 0) continue;
+      this.power[k] -= dt;
+      if (this.power[k] <= 0) { this.power[k] = 0; this.audio.play('powerEnd'); if (k === 'reaper') this.horde.instaKill = false; this.renderPowers(); }
+    }
+    this.tickPowers();
+  }
+  applyPower(type) {
+    const T = POWER_TYPES[type];
+    this.audio.play('powerup', { type });
+    this.announce(T.name, T.sub, T.color);
+    this.shake(0.15);
+    if (type === 'bounty') this.power.bounty = POWERUPS.bounty.time;
+    else if (type === 'reaper') { this.power.reaper = POWERUPS.reaper.time; this.horde.instaKill = true; }
+    else if (type === 'resupply') {
+      for (const w of this.arsenal.weapons) { w.mag = w.def.mag; w.reserve = w.def.reserve; }
+      this.throwables.frags = THROW.frag.max; this.throwables.screamers = Math.max(this.throwables.screamers, 1);
+      this.hudDirty = true;
+    } else if (type === 'deadfall') this.deadfall();
+    this.renderPowers();
+  }
+  // DEADFALL: every husk on the map drops at once (the Colossus only takes heavy damage)
+  deadfall() {
+    const H = this.horde, P = this.player.pos, cfg = POWERUPS.deadfall, dir = this._dfDir || (this._dfDir = new THREE.Vector3());
+    this.blasting = true; let kills = 0, booms = 0;
+    for (const e of H.enemies) {
+      if (e.dead) continue;
+      if (e.type.boss) { e.hp = Math.max(1, e.hp - e.maxHp * cfg.bossDmg); e.flash = 1; continue; }
+      const c = e.joints[1] || e.pos;
+      dir.set(e.pos.x - P.x, 0, e.pos.z - P.z).normalize(); dir.y = 0.8; dir.normalize();
+      const res = H.damage(e, e.hp + 9999, 'body', c.clone(), dir.clone(), { id: 'deadfall', knock: 9 }, 0);
+      if (!res.killed) continue;
+      kills++;
+      if (e.type.sever) { const n = 1 + Math.floor(Math.random() * 3); for (let k = 0; k < n; k++) H.sever(e, [2, 3, 4, 5, 6, 7, 8, 9, 1][Math.floor(Math.random() * 9)], dir); }
+      if (!e.type.hue) { this.fx.bloodMist(c, dir, 1.5); if (booms < 10) this.fx.gib(c.clone(), dir, 6, H.groundAt(c.x, c.z, c.y)); }
+      if (booms++ < 6) this.fx.explosion(c.clone(), 0.45, H.groundAt(c.x, c.z, c.y));
+    }
+    this.blasting = false;
+    this.fx.slam(P.clone(), 34);
+    this.audio.play('deadfall');
+    this.addScore(cfg.bonus);
+    this.feed(`<b>DEADFALL</b>${kills ? ` · ${kills} down` : ''}`, cfg.bonus * (this.power.bounty > 0 ? POWERUPS.bounty.mult : 1));
+    const fl = $('pwflash'); fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+    this.shake(1); this.hitstop = Math.max(this.hitstop, 0.12); this.arsenal.camKick.impulse(-5, 0, 3);
+  }
+  announce(title, sub, color) {
+    const a = $('pwann'); $('pwann-t').textContent = title; $('pwann-s').textContent = sub; a.style.setProperty('--c', color);
+    a.classList.remove('on'); void a.offsetWidth; a.classList.add('on');
+  }
+  renderPowers() {
+    const box = $('powers');
+    if (!this.powerEls) {
+      this.powerEls = {};
+      for (const k of ['bounty', 'reaper']) {
+        const d = document.createElement('div'); d.className = 'pw'; d.style.setProperty('--c', POWER_TYPES[k].color);
+        d.innerHTML = `<img src="${powerIconURL(k)}" alt=""><b></b><i></i>`; box.appendChild(d);
+        this.powerEls[k] = { el: d, t: d.querySelector('b'), bar: d.querySelector('i'), last: -1 };
+      }
+    }
+    for (const k in this.powerEls) this.powerEls[k].el.classList.toggle('on', this.power[k] > 0);
+  }
+  tickPowers() {
+    for (const k in this.powerEls || {}) {
+      const P = this.powerEls[k], left = this.power[k]; if (left <= 0) continue;
+      const s = Math.ceil(left); if (s !== P.last) { P.last = s; P.t.textContent = s; P.el.classList.toggle('low', left < 5); }
+      P.bar.style.transform = `scaleX(${(left / POWERUPS[k].time).toFixed(3)})`;
+    }
+  }
   onKill(e, info) {
     this.kills++; if (info.head) this.headshots++;
+    const H = this.horde;
+    if (H.wave > 0 && H.toSpawn <= 0 && H.bossDelay <= 0 && H.aliveCount() === 0) this.slowT = FEEDBACK.slowmo.dur; // last husk of the wave
+    if (this.blasting) { this.hudDirty = true; return; } // DEADFALL pays a flat bonus instead
+    if (!e.type.boss) this.powerups.maybeDrop(e.pos, H.wave);
     const pts = (e.type.points + (info.head ? 50 : 0)) * (1 + Math.floor((this.horde.wave - 1) / 3) * 0.5);
     this.addScore(Math.round(pts), true);
     this.audio.play('kill'); if (info.head) this.audio.play('headshot');
@@ -506,8 +588,9 @@ class Game {
     while (f.children.length > 5) f.lastChild.remove();
   }
   damageNumber(p, v, head, kill) {
-    const s = this.dmgNums.find((x) => x.life <= 0) || this.dmgNums[0];
-    s.life = 0.8; s.pos.copy(p).add(new THREE.Vector3(rand(-0.15, 0.15), 0.1, rand(-0.15, 0.15)));
+    let s = this.dmgNums[0];
+    for (const x of this.dmgNums) if (x.life <= 0) { s = x; break; } else if (x.life < s.life) s = x;
+    s.life = FEEDBACK.dmgNumLife; s.pos.set(p.x + rand(-0.15, 0.15), p.y + 0.1, p.z + rand(-0.15, 0.15));
     s.el.textContent = v; s.el.className = 'dn on' + (head ? ' head' : '') + (kill ? ' kill' : '');
   }
   onAcid(dmg, from, tick) {
@@ -617,6 +700,15 @@ class Game {
     const input = this.input, p = this.player, A = this.arsenal;
     const active = this.state === 'play' || this.state === 'dead' || this.state === 'shop';
     let dt = active ? raw : 0;
+    // slow motion on the last kill of a wave: quick ramp in, hold, ease back out (counts down in real time)
+    let slowK = 0;
+    if (this.slowT > 0) {
+      const S = FEEDBACK.slowmo, el = S.dur - this.slowT; this.slowT -= raw;
+      slowK = Math.min(1, el / 0.06, Math.max(0, this.slowT) / 0.3);
+      dt *= lerp(1, S.scale, slowK);
+    }
+    this.slowK = slowK;
+    if (this.audio.ctx) this.audio.pitch = lerp(1, FEEDBACK.slowmo.pitch, slowK);
     this.time += dt;
 
     // hitstop slows the world (not your view) for a few frames on kills
@@ -683,7 +775,7 @@ class Game {
     // FOV: ADS zoom + sprint/slide punch
     const d = A.def;
     const sprintF = p.sprinting && p.grounded ? 5 : 0, slideF = p.sliding > 0 ? 8 : 0;
-    const targetFov = lerp(HIP_FOV + sprintF + slideF, d.adsFov, ads);
+    const targetFov = lerp(HIP_FOV + sprintF + slideF, d.adsFov, ads) - FEEDBACK.slowmo.zoom * slowK;
     if (this.state === 'play') this.camera.fov = damp(this.camera.fov, targetFov, ads > 0 && ads < 1 ? 40 : 14, dt);
     this.vmCamera.fov = lerp(VM_HIP_FOV, d.vmAdsFov, ads);
     // when aiming, clip the stock/buffer tube right under the eye so it never fills the bottom of the screen
@@ -695,6 +787,7 @@ class Game {
       this.horde.update(worldDt, this.time, this.camera);
       this.barrels.update(worldDt, this.fx, (p) => this.explode(p, 1));
       this.throwables.update(worldDt, this.time);
+      if (this.state === 'play') this.updatePowers(dt);
       this.wallbuys.update(this.time);
       this.updateWallPrompt();
       this.fx.update(worldDt, this.camera, this.time);
@@ -796,14 +889,14 @@ class Game {
     else if (this.horde.bossDelay <= 0) $('bossbar').classList.remove('on');
     if (this.debugFps) $('fps').textContent = `${Math.round(this.fps)} fps`;
     // floating damage numbers
-    const v = new THREE.Vector3();
+    const v = this._dnV || (this._dnV = new THREE.Vector3());
     for (const n of this.dmgNums) {
       if (n.life <= 0) continue;
       n.life -= dt; n.pos.y += dt * 0.9;
       v.copy(n.pos).project(this.camera);
       if (v.z > 1 || n.life <= 0) { n.el.className = 'dn'; continue; }
       n.el.style.transform = `translate(${((v.x + 1) / 2) * innerWidth}px, ${((1 - v.y) / 2) * innerHeight}px) translate(-50%,-50%)`;
-      n.el.style.opacity = Math.min(1, n.life * 3);
+      n.el.style.opacity = Math.min(0.9, n.life * 3);
     }
   }
 }
@@ -836,5 +929,7 @@ window.__debug = {
   bossInfo() { const b = game.horde.boss; return b ? { hp: Math.round(b.hp), max: Math.round(b.maxHp), bs: b.bs, dead: b.dead } : null; },
   god(on) { game.god = on; game.player.hurt = on ? () => {} : Player.prototype.hurt; },
   quality(q) { game.applyQuality(q); },
+  power(type, x, z) { const p = game.player.pos; return !!game.powerups.spawn(type, x ?? p.x, z ?? p.z - 3, p.y); },
+  slowmo() { game.slowT = FEEDBACK.slowmo.dur; },
   frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },
 };

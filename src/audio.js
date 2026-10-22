@@ -47,7 +47,8 @@ export class Audio {
 
   // noise burst through a filter with an envelope
   burst({ t = 0, dur = 0.1, type = 'bandpass', freq = 1000, q = 0.8, gain = 1, attack = 0.001, rate = 1, out, send = 0, pan = 0, freqEnd }) {
-    const ctx = this.ctx, now = ctx.currentTime + t;
+    const ctx = this.ctx, now = ctx.currentTime + t, P = this.pitch || 1;
+    rate *= P; freq *= P; if (freqEnd) freqEnd *= P;
     const src = ctx.createBufferSource(); src.buffer = this.noise; src.playbackRate.value = rate;
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, now); f.Q.value = q;
     if (freqEnd) f.frequency.exponentialRampToValueAtTime(freqEnd, now + dur);
@@ -59,7 +60,8 @@ export class Audio {
     src.start(now, Math.random() * Math.max(0, 3.8 - dur), dur + 0.05);
   }
   tone({ t = 0, dur = 0.1, type = 'sine', freq = 200, freqEnd, gain = 0.5, attack = 0.002, out, pan = 0, send = 0 }) {
-    const ctx = this.ctx, now = ctx.currentTime + t;
+    const ctx = this.ctx, now = ctx.currentTime + t, P = this.pitch || 1;
+    freq *= P; if (freqEnd) freqEnd *= P;
     const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, now);
     if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, now + dur);
     const g = ctx.createGain();
@@ -102,7 +104,26 @@ export class Audio {
       case 'raise': this.burst({ dur: 0.05, type: 'bandpass', freq: 2000, q: 2.5, gain: 0.25 }); this.burst({ t: 0.04, dur: 0.08, type: 'bandpass', freq: 800, q: 1.5, gain: 0.2 }); break;
       case 'tink': { const f = r(5200, 7200); this.tone({ t: 0.02, dur: 0.08, freq: f, gain: 0.05 }); this.tone({ t: 0.12, dur: 0.06, freq: f * 1.07, gain: 0.03 }); break; }
       case 'hit': this.tone({ dur: 0.05, type: 'square', freq: 1900, freqEnd: 1500, gain: 0.08 }); this.burst({ dur: 0.03, type: 'highpass', freq: 3000, gain: 0.18 }); this.burst({ dur: 0.06, type: 'lowpass', freq: 400, gain: 0.35 }); break;
-      case 'headshot': this.tone({ dur: 0.18, type: 'sine', freq: 3200, freqEnd: 2900, gain: 0.18 }); this.tone({ dur: 0.12, type: 'triangle', freq: 1600, gain: 0.12 }); this.burst({ dur: 0.08, type: 'lowpass', freq: 500, gain: 0.55 }); break;
+      case 'headshot': // sharp skull crack + bright double tick, clearly not the body thud
+        this.burst({ dur: 0.022, type: 'highpass', freq: 4200, gain: 0.9 });
+        this.burst({ t: 0.004, dur: 0.06, type: 'bandpass', freq: 2100, q: 4, gain: 0.5, freqEnd: 1300 });
+        this.tone({ dur: 0.07, type: 'square', freq: 3900, freqEnd: 3500, gain: 0.05 });
+        this.tone({ t: 0.045, dur: 0.11, type: 'triangle', freq: 5200, freqEnd: 4800, gain: 0.07 });
+        this.burst({ dur: 0.07, type: 'lowpass', freq: 520, gain: 0.45 }); break;
+      // ---- power-ups ----
+      case 'powerDrop': this.tone({ dur: 0.5, type: 'sine', freq: 880, freqEnd: 1320, gain: 0.07, attack: 0.02 }); this.tone({ t: 0.08, dur: 0.6, type: 'triangle', freq: 1760, gain: 0.03, attack: 0.03 }); this.burst({ dur: 0.4, type: 'bandpass', freq: 5000, q: 6, gain: 0.08, attack: 0.05 }); break;
+      case 'powerup': { // punchy: sub thump, snap, then a rising three-note stab
+        this.tone({ dur: 0.35, type: 'sine', freq: 120, freqEnd: 45, gain: 0.9 });
+        this.burst({ dur: 0.05, type: 'highpass', freq: 2500, gain: 0.6 });
+        const n = { bounty: [523, 659, 988], resupply: [392, 587, 784], reaper: [311, 370, 466], deadfall: [220, 277, 330] }[o.type] || [440, 554, 659];
+        n.forEach((f, i) => { this.tone({ t: 0.05 + i * 0.07, dur: 0.38, type: 'sawtooth', freq: f, gain: 0.055 }); this.tone({ t: 0.05 + i * 0.07, dur: 0.45, type: 'square', freq: f * 2, gain: 0.02 }); });
+        this.burst({ t: 0.03, dur: 0.6, type: 'bandpass', freq: 1800, q: 1.2, gain: 0.25, freqEnd: 6000, send: 0.5 }); break; }
+      case 'powerEnd': this.tone({ dur: 0.3, type: 'triangle', freq: 880, freqEnd: 330, gain: 0.08 }); this.tone({ t: 0.12, dur: 0.3, type: 'triangle', freq: 660, freqEnd: 250, gain: 0.06 }); break;
+      case 'deadfall': // pressure drop, then a huge rolling boom
+        this.burst({ dur: 0.5, type: 'lowpass', freq: 300, gain: 0.5, attack: 0.3, freqEnd: 2400 });
+        this.tone({ t: 0.32, dur: 2.2, type: 'sine', freq: 70, freqEnd: 22, gain: 1.4 });
+        this.burst({ t: 0.32, dur: 2.6, type: 'lowpass', freq: 1400, gain: 1.6, freqEnd: 70, send: 1 });
+        this.burst({ t: 0.32, dur: 0.12, type: 'highpass', freq: 1500, gain: 1.0 }); break;
       case 'kill': this.tone({ dur: 0.22, type: 'sine', freq: 140, freqEnd: 45, gain: 0.6 }); this.tone({ t: 0.01, dur: 0.24, type: 'sine', freq: 1250, freqEnd: 1180, gain: 0.12 }); this.burst({ dur: 0.12, type: 'lowpass', freq: 800, gain: 0.5 }); break;
       case 'impact': {
         const metal = o.mat === 'metal', wood = o.mat === 'wood';

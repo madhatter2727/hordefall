@@ -430,7 +430,7 @@ export class Horde {
       else if (backCore) { amount *= 2.2; weak = true; }
       else { amount *= part === 'limb' ? 0.4 : 0.28; armor = def.id !== 'melee'; }
       if (e.bs === 'stun') amount *= 1.5;
-    }
+    } else if (this.instaKill && def.id !== 'deadfall') amount = Math.max(amount, e.hp + 1); // REAPER power-up
     e.hp -= amount; e.flash = armor ? 0.35 : 1; e.lastHit = performance.now();
     if (!e.aware) this.wake(e);
     if (pi >= 0 && !armor) e.wound[pi] = Math.min(1, e.wound[pi] + 0.25 + amount / 60);
@@ -474,8 +474,9 @@ export class Horde {
         if (e.ragdoll && e.deadT < 2.5) for (let i = 0; i < NJ; i++) e.prev[i].addScaledVector(dir, -h * 5 * f / Math.sqrt(e.type.mass));
         continue;
       }
-      const res = this.damage(e, maxDmg * (0.3 + 0.7 * f), 'body', c.clone(), dir, def, 0);
+      const amt = maxDmg * (0.3 + 0.7 * f), res = this.damage(e, amt, 'body', c.clone(), dir, def, 0);
       if (res.killed) kills++;
+      this.hooks.onBlastHit?.(e, amt, res, c);
       if (e.type.sever && (res.killed || f > 0.55)) {
         const opts = [2, 4, 6, 8, 3, 5, 7, 9, 1].sort(() => Math.random() - 0.5), n = f > 0.65 ? 2 + Math.floor(Math.random() * 2) : f > 0.35 ? 1 : 0;
         for (let k = 0; k < n; k++) this.sever(e, opts[k], dir);

@@ -45,3 +45,27 @@ export function waveParams(n) {
     sprinters: Math.min(g.sprinterCap, last.sprinters + g.sprinters * k), brutes: Math.floor(last.brutes + g.brutes * k), pace: last.pace,
   };
 }
+
+// ============================================================================
+// Power-up drops (M10). A killed husk (never the Colossus) may drop one glowing pickup.
+//   chance    per-kill drop chance: base + perWave * (wave - 1), capped at max (rarer early on)
+//   perWave   most drops allowed in one wave (by wave number)
+//   minGap    seconds between two drops
+//   life      seconds a pickup stays on the ground; it blinks for the last `blink` seconds
+//   weights   how likely each type is when something drops
+// ============================================================================
+export const POWERUPS = {
+  chance: { base: 0.025, perWave: 0.005, max: 0.06 },
+  perWave: (w) => (w <= 2 ? 1 : w <= 6 ? 2 : 3),
+  minGap: 9, life: 22, blink: 6, pickRadius: 1.35, maxOnMap: 3,
+  weights: { bounty: 30, resupply: 28, reaper: 26, deadfall: 16 },
+  bounty: { time: 30, mult: 2 },       // BOUNTY ×2: every point you earn counts double
+  reaper: { time: 20 },                // REAPER: any hit kills an ordinary husk (the Colossus is immune)
+  deadfall: { bonus: 400, bossDmg: 0.25 }, // DEADFALL: kills every husk; the Colossus loses 25% of its max health instead
+};
+
+// Hit feedback (M10)
+export const FEEDBACK = {
+  slowmo: { dur: 0.85, scale: 0.3, zoom: 7, pitch: 0.72 }, // last husk of a wave: seconds (real time), time scale, FOV zoom-in (deg), audio pitch
+  dmgNumLife: 0.75,
+};
