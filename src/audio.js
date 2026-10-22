@@ -204,6 +204,18 @@ export class Audio {
         this.burst({ t: 0.4, dur: 1.2, type: 'bandpass', freq: 6000, q: 3, gain: 0.1, attack: 0.2, send: 0.9 });
         break;
       case 'forgeTake': [392, 587, 784, 1175].forEach((f, i) => this.tone({ t: i * 0.05, dur: 0.6, type: 'triangle', freq: f, gain: 0.09, send: 0.6 })); this.tone({ dur: 0.4, type: 'sine', freq: 90, freqEnd: 45, gain: 0.7 }); break;
+      // ---- M12 perk drinks: each machine hums its own little motif ----
+      case 'drinkHum': {
+        const M = { bulwark: [196, 247, 294, 247], snapload: [523, 659, 784, 1046], hairtrigger: [440, 440, 554, 659], lastgasp: [311, 370, 466, 415] }[o.id] || [440, 550];
+        const gn = 0.05 * (o.gain ?? 1), wave = { bulwark: 'triangle', snapload: 'square', hairtrigger: 'sawtooth', lastgasp: 'sine' }[o.id];
+        M.forEach((f, i) => this.tone({ t: i * 0.16, dur: 0.22, type: wave, freq: f, gain: gn * (wave === 'square' || wave === 'sawtooth' ? 0.5 : 1), send: 0.5 }));
+        this.tone({ dur: 1.0, type: 'sine', freq: 60, gain: gn * 1.5, attack: 0.2 }); // compressor hum
+        break;
+      }
+      case 'drinkOpen': this.burst({ dur: 0.12, type: 'highpass', freq: 3000, gain: 0.5, freqEnd: 7000 }); this.burst({ dur: 0.05, type: 'bandpass', freq: 1800, q: 3, gain: 0.5 }); this.tone({ t: 0.05, dur: 0.25, type: 'sine', freq: 900, freqEnd: 1500, gain: 0.05 }); break;
+      case 'drinkGulp': for (let i = 0; i < 3; i++) { this.tone({ t: i * 0.24, dur: 0.12, type: 'sine', freq: 180, freqEnd: 90, gain: 0.35 }); this.burst({ t: i * 0.24, dur: 0.1, type: 'lowpass', freq: 500, gain: 0.25 }); } break;
+      case 'drinkDone': { const n = { bulwark: [196, 294, 392], snapload: [659, 988, 1319], hairtrigger: [440, 659, 880], lastgasp: [311, 466, 622] }[o.id] || [440, 660, 880]; n.forEach((f, i) => this.tone({ t: i * 0.08, dur: 0.6, type: 'triangle', freq: f, gain: 0.1, send: 0.7 })); this.tone({ dur: 0.4, type: 'sine', freq: 80, freqEnd: 40, gain: 0.6 }); break; }
+      case 'secondWind': this.tone({ dur: 1.2, type: 'sine', freq: 40, freqEnd: 120, gain: 0.9, attack: 0.05 }); [233, 311, 466, 622].forEach((f, i) => this.tone({ t: 0.2 + i * 0.1, dur: 1.0, type: 'triangle', freq: f, gain: 0.1, send: 0.8 })); this.burst({ dur: 0.6, type: 'lowpass', freq: 200, gain: 0.9, freqEnd: 3000 }); break;
       case 'buy': this.tone({ dur: 0.08, type: 'triangle', freq: 880, gain: 0.12 }); this.tone({ t: 0.07, dur: 0.18, type: 'triangle', freq: 1320, gain: 0.12, send: 0.3 }); this.burst({ dur: 0.05, type: 'highpass', freq: 5000, gain: 0.15 }); break;
       case 'perk': [392, 523, 659, 1046].forEach((f, i) => this.tone({ t: i * 0.06, dur: 0.5, type: 'triangle', freq: f, gain: 0.09, send: 0.6 })); this.burst({ dur: 0.6, type: 'bandpass', freq: 3000, q: 1, gain: 0.12, attack: 0.05, freqEnd: 6000, send: 0.5 }); break;
       case 'shopOpen': this.burst({ dur: 0.5, type: 'lowpass', freq: 300, gain: 0.5, freqEnd: 1200 }); this.tone({ dur: 0.6, type: 'sine', freq: 110, freqEnd: 220, gain: 0.25, send: 0.4 }); break;

@@ -154,6 +154,6 @@ export class Player {
     // armor plates soak most of a hit until they break
     if (this.armor > 0) { const a = Math.min(this.armor, amount * 0.7); this.armor -= a; amount -= a; this.onArmor?.(this.armor <= 0); }
     this.health -= amount; this.lastHurt = performance.now() / 1000;
-    if (this.health <= 0) { this.health = 0; this.alive = false; }
+    if (this.health <= 0) { if (this.onLethal?.()) return; this.health = 0; this.alive = false; }
   }
 }

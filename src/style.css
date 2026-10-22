@@ -254,3 +254,13 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 #wname.rare { color: #8beaff; text-shadow: 0 0 10px rgba(111,227,255,.45); }
 @keyframes upglow { 0%, 100% { color: #ff8af3; } 50% { color: #9af0ff; } }
 #banner.crate #banner-t { color: #6fe3ff; }
+
+/* M12: perk drinks */
+#drinkicons { position: absolute; left: 24px; bottom: 64px; display: flex; gap: 8px; }
+#drinkicons .dk { display: flex; flex-direction: column; align-items: center; gap: 1px; animation: dkin .5s ease-out; }
+#drinkicons .dk img { width: 40px; height: 40px; filter: drop-shadow(0 0 6px var(--c)); }
+#drinkicons .dk span { font: 500 13px 'Teko', sans-serif; letter-spacing: .12em; color: var(--c); }
+@keyframes dkin { from { transform: scale(2.2); opacity: 0; } to { transform: none; opacity: 1; } }
+#drinktint { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 30%, var(--c) 130%); mix-blend-mode: screen; }
+#drinktint.on { animation: dktint 1.8s ease-out forwards; }
+@keyframes dktint { 0% { opacity: 0; } 15% { opacity: .85; } 100% { opacity: 0; } }

@@ -5,6 +5,7 @@ import { clamp, lerp, damp, rand, rayAABB } from './core/util.js';
 import { buildArena } from './world/arena.js';
 import { WallBuys } from './world/wallbuys.js';
 import { Stations } from './world/stations.js';
+import { Drinks, drinkIconURL } from './world/drinks.js';
 import { Barrels } from './world/barrels.js';
 import { makeSky, SUN_DIR } from './world/sky.js';
 import { Player } from './player.js';
@@ -20,7 +21,7 @@ import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
 import { PowerUps, POWER_TYPES, powerIconURL } from './powerups.js';
-import { POWERUPS, FEEDBACK, BOSS_HIT, CRATE, FORGE } from './tuning.js';
+import { POWERUPS, FEEDBACK, BOSS_HIT, CRATE, FORGE, DRINKS } from './tuning.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -78,6 +79,7 @@ class Game {
     this.arena = buildArena(scene, this.quality, assets);
     this.barrels = new Barrels(scene, this.arena, assets); // adds its colliders before anyone copies the list
     this.player = new Player(this.arena.colliders);
+    this.player.onLethal = () => this.secondWind();
     this.fx = new Effects(scene, this.quality);
     this.audio = new Audio();
     this.input = new Input(canvas);
@@ -113,6 +115,13 @@ class Game {
       smoke: (p) => this.fx.alpha.spawn({ pos: p.clone(), vel: new THREE.Vector3(rand(-0.2, 0.2), rand(0.8, 1.4), rand(-0.2, 0.2)), life: rand(1.4, 2.4), size: rand(0.12, 0.2), grow: 0.8, col: new THREE.Color(0.3, 0.29, 0.3), alpha: 0.3, drag: 1.2, grav: -0.2 }),
       upgraded: (w) => { this.announce('WEAPON UPGRADED', w.def.name, '#ff6af0'); this.shake(0.15); this.hudDirty = true; },
     });
+    // M12: perk-drink machines (solid props too)
+    this.drinksOwned = {};
+    this.drinks = new Drinks(scene, this.arena.colliders, {
+      audio: this.audio, vmCamera: this.vmCamera, owned: () => this.drinksOwned,
+      spend: (n) => { if (this.pts < n) { this.audio.play('dry'); return false; } this.pts -= n; this.hudDirty = true; return true; },
+      buy: (d) => this.drinkPerk(d),
+    });
 
     this.blade = new MacheteVM(this.vmCamera, this.arsenal.models.materials);
     this.horde = new Horde(scene, this.arena, {
@@ -139,7 +148,7 @@ class Game {
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.powerups = new PowerUps(scene, { groundAt: (x, z, y) => this.horde.groundAt(x, z, y), audio: this.audio, walkable: (p) => this.walkableNear(p) });
     this.power = { bounty: 0, reaper: 0 }; this.slowT = 0;
-    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys, this.stations);
+    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys, { icons: () => [...this.stations.icons(), ...this.drinks.icons()] });
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
 
@@ -180,7 +189,8 @@ class Game {
       if (e.code === 'KeyP' && this.state === 'play') document.exitPointerLock();
       if (e.code === 'KeyF' && this.state === 'play') {
         const st = this.stationTarget;
-        if (st?.kind === 'crate') this.stations.useCrate();
+        if (this.drinkTarget) this.drinks.use(this.drinkTarget);
+        else if (st?.kind === 'crate') this.stations.useCrate();
         else if (st?.kind === 'forge') this.stations.useForge();
         else if (this.wallTarget) this.buy('gun:' + this.wallTarget.id);
       }
@@ -226,7 +236,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.drinks.reset(); this.drinksOwned = {}; this.immuneT = 0; this.renderDrinks(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -264,6 +274,31 @@ class Game {
     this.shake(clamp(1.15 * k * (1 - d / 30), 0.05, 1));
     if (d < 14 && k >= 0.8) this.hitstop = Math.max(this.hitstop, 0.06);
   }
+  // ------------------------------------------------------------ M12 perk drinks
+  drinkPerk(d) {
+    this.drinksOwned[d.id] = true; this.applyPerks();
+    if (d.hp) this.player.health = this.player.maxHealth;
+    const tint = $('drinktint'); tint.style.setProperty('--c', d.color); tint.classList.remove('on'); void tint.offsetWidth; tint.classList.add('on');
+    this.announce(d.name, d.blurb, d.color); this.audio.play('drinkDone', { id: d.id });
+    this.renderDrinks(); this.hudDirty = true;
+  }
+  renderDrinks() {
+    const box = $('drinkicons');
+    box.innerHTML = DRINKS.list.filter((d) => this.drinksOwned[d.id]).map((d) => `<div class="dk" style="--c:${d.color}" title="${d.name}"><img src="${drinkIconURL(d)}" alt=""><span>${d.name.split(' ')[0]}</span></div>`).join('');
+  }
+  // LAST GASP TONIC: a killing blow puts you back on your feet once
+  secondWind() {
+    if (!this.drinksOwned.lastgasp) return false;
+    const R = DRINKS.list.find((d) => d.id === 'lastgasp').revive, P = this.player;
+    delete this.drinksOwned.lastgasp; this.renderDrinks();
+    P.health = R.hp; this.immuneT = R.immune;
+    const p = P.pos.clone(); p.y += 0.9;
+    for (const e of this.horde.enemies) { if (e.dead) continue; const v = e.pos.clone().sub(P.pos); v.y = 0; const dd = v.length(); if (dd < R.push && !e.type.boss) { e.kb.addScaledVector(v.normalize(), 12 * (1 - dd / R.push)); } }
+    this.horde.blast(p, 4, R.dmg);
+    const tint = $('drinktint'); tint.style.setProperty('--c', '#b47bff'); tint.classList.remove('on'); void tint.offsetWidth; tint.classList.add('on');
+    this.announce('LAST GASP', 'Back on your feet. Make it count', '#b47bff'); this.audio.play('secondWind'); this.shake(0.6); this.hitstop = 0.2;
+    return true;
+  }
   // ------------------------------------------------------------ points, perks, intermission shop
   addScore(n, kill = false) {
     if (this.power.bounty > 0) n *= POWERUPS.bounty.mult; // BOUNTY ×2
@@ -271,8 +306,9 @@ class Game {
   }
   applyPerks() {
     const L = (id) => this.perks[id] || 0, P = this.player;
-    this.arsenal.setMods({ dmg: 1 + 0.15 * L('dmg'), rof: 1 + 0.12 * L('rof'), reload: 1 + 0.25 * L('reload'), mag: 1 + 0.3 * L('mag'), head: 1 + 0.3 * L('head'), explosive: L('boom') });
-    P.maxHealth = 100 + 25 * L('hp'); P.health = Math.min(P.health, P.maxHealth);
+    const D = (id) => (this.drinksOwned?.[id] ? DRINKS.list.find((d) => d.id === id) : null);
+    this.arsenal.setMods({ dmg: 1 + 0.15 * L('dmg'), rof: (1 + 0.12 * L('rof')) * (D('hairtrigger')?.rof || 1), reload: (1 + 0.25 * L('reload')) * (D('snapload')?.reload || 1), mag: 1 + 0.3 * L('mag'), head: 1 + 0.3 * L('head'), explosive: L('boom') });
+    P.maxHealth = 100 + 25 * L('hp') + (D('bulwark')?.hp || 0); P.health = Math.min(P.health, P.maxHealth);
     P.regenDelay = 4 * Math.pow(0.65, L('regen')); P.regenRate = 30 * (1 + 0.5 * L('regen'));
     P.speedMul = 1 + 0.08 * L('speed');
     this.ptsMul = 1 + 0.25 * L('greed');
@@ -358,9 +394,16 @@ class Game {
   updateWallPrompt() {
     const el = $('buyprompt');
     const b = this.state === 'play' ? this.wallbuys.nearest(this.player.pos, this.camera.getWorldDirection(this._wbDir || (this._wbDir = new THREE.Vector3()))) : null;
-    const st = this.state === 'play' && !b ? this.stations.target(this.player.pos, this._wbDir) : null;
-    this.wallTarget = b; this.stationTarget = st;
+    const dk = this.state === 'play' && !b ? this.drinks.target(this.player.pos, this._wbDir) : null;
+    const st = this.state === 'play' && !b && !dk ? this.stations.target(this.player.pos, this._wbDir) : null;
+    this.wallTarget = b; this.stationTarget = st; this.drinkTarget = dk;
     let html = '';
+    if (dk) {
+      const d = dk.d, n = Object.keys(this.drinksOwned).length;
+      html = this.drinksOwned[d.id] ? `<i>${d.name} · ALREADY IN YOUR SYSTEM</i>`
+        : n >= DRINKS.limit ? `<i>${d.name} · YOU CAN'T HOLD ANY MORE (${DRINKS.limit} MAX)</i>`
+        : this.drinks.drinking ? '' : `<kbd>F</kbd> DRINK <b style="color:${d.color}">${d.name}</b> <i>${d.blurb}</i> <span class="${this.pts >= d.price ? 'ok' : 'no'}">${d.price.toLocaleString()}</span>`;
+    }
     const price = (n) => `<span class="${this.pts >= n ? 'ok' : 'no'}">${n.toLocaleString()}</span>`;
     if (st?.kind === 'crate') {
       const A = this.arsenal, full = A.weapons.length >= 3;
@@ -689,6 +732,7 @@ class Game {
   }
   onPlayerHit(dmg, from, e, opts = {}) {
     if (!this.player.alive) return;
+    if (this.immuneT > 0) return;
     this.player.hurt(dmg);
     this.damageFx = Math.min(1, this.damageFx + dmg / 35);
     this.audio.play('hurt');
@@ -834,7 +878,7 @@ class Game {
       if (xev === 'whoosh') { this.audio.play('bladeSwing', { heavy: X.swing?.kind === 'lunge' }); const sd = X.swing?.kind === 'L' ? 1 : -1; A.camKick.impulse(-0.8, sd * 1.5, sd * 2.5); }
       if (xev === 'hit') this.bladeHit(X.swing?.kind || 'R');
       A.bladeOut = X.out();
-      A.holster = !!T.cook || T.throwAnim > 0 || X.out();
+      A.holster = !!T.cook || T.throwAnim > 0 || X.out() || this.drinks.drinking;
       ads = A.update(dt, input, p, this.aim);
       this.adsNow = ads;
       // dip the gun while the off hand cooks / throws
@@ -868,6 +912,7 @@ class Game {
       if (this.state === 'play') this.updatePowers(dt);
       this.wallbuys.update(this.time);
       this.stations.update(worldDt, this.time);
+      this.drinks.update(dt, this.player.pos); this.immuneT = Math.max(0, (this.immuneT || 0) - dt);
       this.updateWallPrompt();
       this.fx.update(worldDt, this.camera, this.time);
     }
@@ -1011,6 +1056,7 @@ window.__debug = {
   quality(q) { game.applyQuality(q); },
   power(type, x, z) { const p = game.player.pos; return !!game.powerups.spawn(type, x ?? p.x, z ?? p.z - 3, p.y); },
   slowmo() { game.slowT = FEEDBACK.slowmo.dur; },
+  drinks() { return { owned: Object.keys(game.drinksOwned), drinking: game.drinks.drinking, maxHealth: game.player.maxHealth, health: Math.round(game.player.health), alive: game.player.alive, rpmAR: Math.round(game.arsenal.all.ar.def.rpm), reloadAR: +game.arsenal.all.ar.def.reload.toFixed(3) }; },
   crate() { const C = game.stations.crate; return { at: C.at, state: C.state, t: +C.t.toFixed(2), result: C.result, next: C.next, spins: C.spins }; },
   forge() { const F = game.stations.forge; return { state: F.state, t: +F.t.toFixed(2), gun: F.w?.base.id || null }; },
   frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },

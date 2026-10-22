@@ -119,3 +119,25 @@ export const FORGE = {
     rv: 'R-44 JUDGEMENT', lance: 'NX-2 DAYBREAK LANCE', hail: 'SKV-3 FIRESTORM',
   },
 };
+
+// ============================================================================
+// M12 — Perk drinks (four vending machines). Perks last the whole run and are lost when you die.
+//   limit      most drinks you can carry at once
+//   price      points per drink
+//   x, z, ry   where the machine stands and which way it faces
+//   hp         BULWARK BREW: extra max health
+//   reload     SNAPLOAD SODA: reload speed multiplier (1.5 = 50% faster)
+//   rof        HAIRTRIGGER POP: fire-rate multiplier
+//   revive     LAST GASP TONIC: when a hit would kill you, you get back up once with `hp` health,
+//              `immune` seconds of invulnerability and a shockwave that throws back nearby husks; then it's used up
+//   drinkTime  seconds of the first-person drink animation
+// ============================================================================
+export const DRINKS = {
+  limit: 4, drinkTime: 1.7, humRange: 7,
+  list: [
+    { id: 'bulwark', name: 'BULWARK BREW', blurb: 'Max health 100 → 200', price: 2500, color: '#ff3b3b', x: -26, z: 10, ry: Math.PI / 2, hp: 100 },
+    { id: 'snapload', name: 'SNAPLOAD SODA', blurb: 'Reload 50% faster', price: 3000, color: '#5cff6a', x: 10, z: 25, ry: Math.PI, reload: 1.5 },
+    { id: 'hairtrigger', name: 'HAIRTRIGGER POP', blurb: 'Fire rate +33%', price: 2000, color: '#ffb02e', x: 26, z: -24, ry: -Math.PI / 4, rof: 1.33 },
+    { id: 'lastgasp', name: 'LAST GASP TONIC', blurb: 'Get back up once when you would die', price: 4000, color: '#b47bff', x: -6, z: -25, ry: 0, revive: { hp: 60, immune: 3, push: 7, dmg: 150 } },
+  ],
+};

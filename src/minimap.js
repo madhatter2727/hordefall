@@ -75,7 +75,10 @@ export class Minimap {
       let [x, y] = toR(ic.x, ic.z); const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
       if (d > R - 7) { x = cx + (dx / d) * (R - 7); y = cy + (dy / d) * (R - 7); }
       g.save(); g.translate(x, y);
-      if (ic.kind === 'crate') {
+      if (ic.kind === 'drink') {
+        g.fillStyle = ic.color; g.strokeStyle = 'rgba(0,0,0,.75)'; g.lineWidth = 1; g.shadowColor = ic.color; g.shadowBlur = 6;
+        g.beginPath(); g.rect(-2.5, -1, 5, 7); g.rect(-1.2, -4.5, 2.4, 3.5); g.fill(); g.stroke(); g.shadowBlur = 0;
+      } else if (ic.kind === 'crate') {
         const a = ic.moving ? 0.45 + 0.55 * Math.abs(Math.sin(this.t * 6)) : 1;
         g.globalAlpha = a; g.fillStyle = '#0d2a33'; g.strokeStyle = '#6fe3ff'; g.lineWidth = 1.5;
         g.beginPath(); g.rect(-5.5, -5.5, 11, 11); g.fill(); g.stroke();
