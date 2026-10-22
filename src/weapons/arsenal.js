@@ -184,18 +184,10 @@ export class Arsenal {
     if (input.hit('Digit2')) this.select(1);
     if (input.hit('Digit3')) this.select(2);
     const nW = this.weapons.length;
-    if (input.mouse.wheel && nW > 1) this.select((this.index + (input.mouse.wheel > 0 ? 1 : -1) + nW) % nW);
-    if (input.hit('KeyR')) this.startReload();
-    if (input.hit('KeyV') && !this.axeOwned && !this.melee && !this.swap) {
-      this.melee = { t: 0, hit: false };
-      if (this.reload && this.reload.kind === 'shells') this.reload = null;
-      else if (this.reload && this.reload.kind === 'mag' && this.reload.t < 0.55) { this.resetReloadPose(); this.reload = null; }
-      else if (this.reload && this.reload.kind === 'cyl' && this.reload.t < 0.4) { this.resetReloadPose(); this.reload = null; }
-      this.hooks.audio?.play('swing', { gain: 0.8 });
-    }
-
+    if (input.mouse.wheel && nW > 1 && !this.bladeOut) this.select((this.index + (input.mouse.wheel > 0 ? 1 : -1) + nW) % nW);
+    if (input.hit('KeyR') && !this.bladeOut) this.startReload();
     // ---- ADS ----
-    const canAds = !this.swap && !this.melee && !(this.reload && (this.reload.kind === 'mag' || this.reload.kind === 'cyl') && this.reload.t < 0.85);
+    const canAds = !this.swap && !this.melee && !this.bladeOut && !(this.reload && (this.reload.kind === 'mag' || this.reload.kind === 'cyl') && this.reload.t < 0.85);
     this.adsTarget = input.mouse.right && canAds ? 1 : 0;
     const adsSpeed = 1 / d.adsTime;
     this.ads = clamp(this.ads + Math.sign(this.adsTarget - this.ads) * adsSpeed * dt, 0, 1);

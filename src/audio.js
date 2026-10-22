@@ -156,20 +156,20 @@ export class Audio {
         break;
       }
       case 'click': this.tone({ dur: 0.04, type: 'square', freq: 900, gain: 0.04 }); break;
-      // ---- fire axe ----
-      case 'axeSwing': { const h = o.heavy ? 1.3 : 1;
-        this.burst({ dur: 0.28 * h, type: 'bandpass', freq: 260, q: 1.2, gain: 0.55, attack: 0.05, freqEnd: 900, rate: 0.7 });
-        this.burst({ t: 0.05, dur: 0.16, type: 'bandpass', freq: 1400, q: 1.5, gain: 0.18, freqEnd: 2600 });
-        this.tone({ dur: 0.22 * h, freq: 95, freqEnd: 60, gain: 0.12, attack: 0.04 }); break; }
-      case 'axeLunge': this.burst({ dur: 0.18, type: 'lowpass', freq: 700, gain: 0.35 }); this.tone({ dur: 0.3, type: 'sawtooth', freq: 140, freqEnd: 90, gain: 0.04 }); break;
-      case 'axeHit': { const n = o.n || 1;
-        this.burst({ dur: 0.09, type: 'lowpass', freq: 900, gain: 1.1 });               // meaty chop
-        this.tone({ dur: 0.18, freq: 150, freqEnd: 48, gain: 0.85 });                    // body thud
-        this.burst({ t: 0.008, dur: 0.035, type: 'highpass', freq: 3200, gain: 0.45 });  // bone crack
-        this.burst({ t: 0.03, dur: 0.22, type: 'bandpass', freq: 600, q: 0.8, gain: 0.5, freqEnd: 250 }); // wet tear
-        for (let i = 1; i < n; i++) { this.burst({ t: i * 0.045, dur: 0.07, type: 'lowpass', freq: 800, gain: 0.7 }); this.tone({ t: i * 0.045, dur: 0.12, freq: 120, freqEnd: 50, gain: 0.4 }); }
-        this.tone({ t: 0.01, dur: 0.12, type: 'triangle', freq: 2400, freqEnd: 1900, gain: 0.04 }); break; }
-      case 'axeDraw': this.burst({ dur: 0.25, type: 'bandpass', freq: 3800, q: 3, gain: 0.25, freqEnd: 5200 }); this.tone({ t: 0.18, dur: 0.3, type: 'triangle', freq: 1900, freqEnd: 1700, gain: 0.05 }); break;
+      // ---- machete ----
+      case 'bladeSwing': { const h = o.heavy ? 1.25 : 1;
+        this.burst({ dur: 0.2 * h, type: 'bandpass', freq: 700, q: 1.6, gain: 0.55, attack: 0.03, freqEnd: 2600, rate: 0.75 }); // airy swish
+        this.burst({ t: 0.04, dur: 0.12, type: 'bandpass', freq: 3200, q: 2.5, gain: 0.2, freqEnd: 5200 });
+        this.tone({ dur: 0.16 * h, freq: 140, freqEnd: 80, gain: 0.08, attack: 0.03 }); break; }
+      case 'bladeLunge': this.burst({ dur: 0.18, type: 'lowpass', freq: 700, gain: 0.35 }); this.tone({ dur: 0.3, type: 'sawtooth', freq: 140, freqEnd: 90, gain: 0.04 }); break;
+      case 'bladeHit': { const n = o.n || 1;
+        this.burst({ dur: 0.05, type: 'highpass', freq: 2600, gain: 0.55 });               // edge bite
+        this.burst({ t: 0.005, dur: 0.1, type: 'lowpass', freq: 1000, gain: 1.0 });        // meaty chop
+        this.tone({ dur: 0.16, freq: 160, freqEnd: 50, gain: 0.75 });                     // body thud
+        this.burst({ t: 0.02, dur: 0.24, type: 'bandpass', freq: 700, q: 0.8, gain: 0.55, freqEnd: 260 }); // wet tear
+        for (let i = 1; i < n; i++) { this.burst({ t: i * 0.045, dur: 0.07, type: 'lowpass', freq: 850, gain: 0.7 }); this.tone({ t: i * 0.045, dur: 0.12, freq: 120, freqEnd: 50, gain: 0.4 }); }
+        this.tone({ t: 0.01, dur: 0.22, type: 'triangle', freq: 2900, freqEnd: 2750, gain: 0.035 }); break; } // blade ring
+      case 'bladeDraw': this.burst({ dur: 0.28, type: 'bandpass', freq: 4200, q: 3, gain: 0.28, freqEnd: 6000 }); this.tone({ t: 0.16, dur: 0.45, type: 'triangle', freq: 2300, freqEnd: 2200, gain: 0.05 }); this.tone({ t: 0.16, dur: 0.35, type: 'sine', freq: 3450, gain: 0.025 }); break;
       // ---- throwables ----
       case 'pin': this.burst({ dur: 0.04, type: 'bandpass', freq: 4200, q: 4, gain: 0.35 }); this.tone({ t: 0.03, dur: 0.12, freq: 3100, freqEnd: 2900, gain: 0.05 }); this.burst({ t: 0.12, dur: 0.05, type: 'bandpass', freq: 2400, q: 3, gain: 0.25 }); break;
       case 'tick': this.tone({ dur: 0.035, type: 'square', freq: o.hot ? 1800 : 1250, gain: o.hot ? 0.07 : 0.045 }); break;

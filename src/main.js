@@ -13,7 +13,7 @@ import { Effects } from './fx/effects.js';
 import { Post } from './post.js';
 import { Horde } from './enemies.js';
 import { Throwables, THROW, fragModel } from './throwables.js';
-import { AxeVM, AXE, axeModel } from './weapons/axe.js';
+import { MacheteVM, MACHETE, POSES as BLADE_POSES } from './weapons/machete.js';
 import { Minimap } from './minimap.js';
 import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
@@ -93,13 +93,12 @@ class Game {
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
         this.fx.smoke(this.muzzleNow, fwd, def.smoke ?? (def.id === 'sg' ? 1.6 : def.id === 'mr' ? 1.1 : 0.45));
       },
-      melee: () => this.melee(),
       onFire: (def) => { this.crossKick = 1; this.shake(def.shake ?? (def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025)); this.horde.alert(this.player.pos, def.id === 'mr' ? 42 : 34); },
       onAmmo: () => (this.hudDirty = true),
       onSwap: () => (this.hudDirty = true),
     });
 
-    this.axe = new AxeVM(this.vmCamera, this.arsenal.models.materials);
+    this.blade = new MacheteVM(this.vmCamera, this.arsenal.models.materials);
     this.horde = new Horde(scene, this.arena, {
       assets, player: this.player, fx: this.fx, audio: this.audio,
       onPlayerHit: (dmg, from, e) => this.onPlayerHit(dmg, from, e),
@@ -120,7 +119,7 @@ class Game {
     // grenade held in the off hand while cooking
     this.vmFrag = fragModel(); this.vmFrag.scale.setScalar(0.55); this.vmFrag.position.set(-0.2, -0.16, -0.42); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
     this.vmCamera.add(this.vmFrag);
-    this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS, { axe: { def: AXE, model: axeModel() } });
+    this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
@@ -160,7 +159,7 @@ class Game {
     const dn = $('dmgnums'); dn.checked = this.dmgNumsOn; dn.onchange = () => { this.dmgNumsOn = dn.checked; localStorage.setItem('hf-dn', dn.checked ? '1' : '0'); };
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyP' && this.state === 'play') document.exitPointerLock();
-      if (e.code === 'KeyF' && this.state === 'play' && this.wallTarget) this.buy(this.wallTarget.id === 'axe' ? 'axe' : 'gun:' + this.wallTarget.id);
+      if (e.code === 'KeyF' && this.state === 'play' && this.wallTarget) this.buy('gun:' + this.wallTarget.id);
       if (this.state === 'shop') {
         const k = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
         if (k >= 0) this.pickPerk(k);
@@ -203,7 +202,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.axe.reset(); this.arsenal.axeOwned = false;
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.arsenal.bladeOut = false;
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -302,7 +301,6 @@ class Game {
     items.push({ key: 'ammo', name: SHOP.ammo.name, desc: SHOP.ammo.desc, cost: SHOP.ammo.cost, ok: A.weapons.some((w) => w.reserve < w.def.reserve) });
     items.push({ key: 'armor', name: SHOP.armor.name, desc: SHOP.armor.desc, cost: SHOP.armor.cost, ok: P.armor < SHOP.armor.max });
     const T = this.throwables;
-    items.push({ key: 'axe', name: AXE.name, desc: this.axe.owned ? 'Owned · V swings it' : 'Heavy melee on V · cleaves 3, lunges', cost: AXE.cost, ok: !this.axe.owned, owned: this.axe.owned });
     items.push({ key: 'frag', name: SHOP.frag.name, desc: `${SHOP.frag.desc} · ${T.frags}/${THROW.frag.max}`, cost: THROW.frag.cost, ok: T.frags < THROW.frag.max });
     items.push({ key: 'screamer', name: SHOP.screamer.name, desc: `${SHOP.screamer.desc} · ${T.screamers}/${THROW.screamer.max}`, cost: THROW.screamer.cost, ok: T.screamers < THROW.screamer.max });
     for (const d of WEAPONS) {
@@ -326,7 +324,6 @@ class Game {
     if (key === 'ammo') this.arsenal.refill();
     else if (key === 'armor') this.player.armor = Math.min(SHOP.armor.max, this.player.armor + 50);
     else if (key === 'frag') this.throwables.frags++;
-    else if (key === 'axe') { this.axe.owned = true; this.arsenal.axeOwned = true; this.audio.play('axeDraw'); this.feed('<b>FIRE AXE</b> · V to swing', 0); }
     else if (key === 'screamer') this.throwables.screamers++;
     else if (key.startsWith('gun:')) this.arsenal.give(key.slice(4));
     this.audio.play('buy'); this.hudDirty = true;
@@ -338,9 +335,7 @@ class Game {
     const b = this.state === 'play' ? this.wallbuys.nearest(this.player.pos, this.camera.getWorldDirection(this._wbDir || (this._wbDir = new THREE.Vector3()))) : null;
     this.wallTarget = b;
     let html = '';
-    if (b && b.id === 'axe') {
-      html = this.axe.owned ? `FIRE AXE <i>(owned · V)</i>` : `<kbd>F</kbd> BUY FIRE AXE <span class="${this.pts >= AXE.cost ? 'ok' : 'no'}">${AXE.cost.toLocaleString()}</span>`;
-    } else if (b) {
+    if (b) {
       const owned = this.arsenal.owns(b.id), cost = owned ? Math.round(b.def.cost / 2) : b.def.cost;
       const what = owned ? `${b.def.short} AMMO` : this.arsenal.weapons.length >= 3 ? `${b.def.name} <i>(swaps ${this.arsenal.current.def.short})</i>` : b.def.name;
       html = `<kbd>F</kbd> BUY ${what} <span class="${this.pts >= cost ? 'ok' : 'no'}">${cost.toLocaleString()}</span>`;
@@ -459,42 +454,30 @@ class Game {
     for (const a of this.pelletAcc.values()) this.damageNumber(a.point, Math.round(a.dmg), a.head, a.killed);
     this.pelletAcc.clear();
   }
-  melee() {
-    const o = this.aim.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
-    const h = this.horde.meleeHit(o, f, 2.4);
-    if (!h) { this.audio.play('swing', { gain: 0.5 }); return; }
-    const def = { id: 'melee', knock: 3.2 };
-    this.pelletMode = false;
-    const res = this.horde.damage(h.e, 110, 'body', h.point, f, def);
-    if (!h.e.type.hue) { this.splatter(h.point, f, def, true); if (res.killed) this.killFx(h, f, def, res); }
-    this.audio.play('flesh', { gain: 1 }); this.audio.play('land', { k: 0.8 });
-    this.shake(0.22); this.hitstop = Math.max(this.hitstop, 0.05);
-    this.onHit({ ...h, part: 'body' }, 110, res);
-  }
   lungeTarget() {
     const o = this.aim.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
-    for (const h of this.horde.meleeCleave(o, f, AXE.lungeMax, 0.85, 1)) if (h.t > AXE.lungeMin) return h;
+    for (const h of this.horde.meleeCleave(o, f, MACHETE.lungeMax, 0.85, 1)) if (h.t > MACHETE.lungeMin) return h;
     return null;
   }
-  // the axe connects: cleave up to three husks in the arc, lopping limbs and heads
-  axeHit(kind) {
+  // the machete connects: cleave up to three husks in the arc, lopping limbs and heads
+  bladeHit(kind) {
     const o = this.aim.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.aim.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.aim.quaternion);
-    const hits = this.horde.meleeCleave(o, f, kind === 'lunge' ? AXE.lungeRange : AXE.range, AXE.cone, 3);
-    if (!hits.length) return;
+    const hits = this.horde.meleeCleave(o, f, kind === 'lunge' ? MACHETE.lungeRange : MACHETE.range, MACHETE.cone, 3);
+    if (!hits.length) { this.arsenal.camKick.impulse(-0.6, (kind === 'R' ? -1 : 1) * 2.5, (kind === 'R' ? -1 : 1) * 3); return; }
     const sweep = kind === 'R' ? -1 : kind === 'L' ? 1 : 0;
     let kills = 0;
     this.pelletMode = false;
     hits.forEach((h, i) => {
       const e = h.e, dir = f.clone().addScaledVector(right, sweep * 0.8).add(new THREE.Vector3(0, kind === 'lunge' ? -0.4 : 0.1, 0)).normalize();
-      const def = { id: 'axe', knock: kind === 'lunge' ? 5.5 : 4.2 };
-      const dmg = AXE.dmg[i] * (kind === 'lunge' ? 1.25 : 1);
+      const def = { id: 'machete', knock: kind === 'lunge' ? 5.5 : 4.2 };
+      const dmg = MACHETE.dmg[i] * (kind === 'lunge' ? 1.25 : 1);
       const res = this.horde.damage(e, dmg, 'body', h.point, dir, def);
       if (res.killed) kills++;
       if (e.type.sever && !e.type.boss) {
         const limbs = kind === 'lunge' ? [2, 4] : sweep < 0 ? [4, 5, 2] : [2, 3, 4];
-        if (res.killed || Math.random() < 0.55) this.horde.sever(e, limbs[Math.floor(Math.random() * limbs.length)], dir);
-        if (res.killed && Math.random() < (kind === 'lunge' ? 0.7 : 0.4)) { this.horde.sever(e, 1, dir); this.feed('<b>DECAPITATED</b>', 25); this.addScore(25); }
+        if (res.killed || Math.random() < 0.6) this.horde.sever(e, limbs[Math.floor(Math.random() * limbs.length)], dir);
+        if (res.killed && Math.random() < (kind === 'lunge' ? 0.75 : 0.45)) { this.horde.sever(e, 1, dir); this.feed('<b>DECAPITATED</b>', 25); this.addScore(25); }
       }
       if (!e.type.hue) { this.splatsThisShot = 0; this.splatter(h.point, dir, def, true); }
       this.fx.bloodHit(h.point, dir, true); this.fx.bloodMist(h.point, dir, 0.7);
@@ -503,7 +486,7 @@ class Game {
     });
     if (kills >= 2) { this.feed(`<b>CLEAVE ×${kills}</b>`, 75 * kills); this.addScore(75 * kills); }
     this.screenBlood = Math.min(this.screenBlood || 0, 0.3); // gore on the lens, but you can still see
-    this.audio.play('axeHit', { n: hits.length });
+    this.audio.play('bladeHit', { n: hits.length });
     this.shake(0.3 + 0.08 * hits.length); this.hitstop = Math.max(this.hitstop, 0.085 + 0.02 * hits.length);
     this.arsenal.camKick.impulse(kind === 'lunge' ? -6 : -2, sweep * 6, sweep * 8);
   }
@@ -655,30 +638,40 @@ class Game {
       this.placeCamera(0);
       const T = this.throwables;
       T.input(dt, input, p.alive);
-      // fire axe on V (replaces the quick knife once bought); lunges when a target is a few metres out
-      const X = this.axe;
-      if (X.owned && input.hit('KeyV') && !T.cook) {
+      // machete: slot 4 draws it (left-click swings, 1/2/3 or wheel go back to a gun); V swings it from anything.
+      // Swings lunge you in when a target is a few metres out.
+      const X = this.blade;
+      if (input.hit('Digit4') && X.draw()) { this.audio.play('bladeDraw'); this.hudDirty = true; A.reload && A.resetReloadPose(); A.reload = null; }
+      if (X.drawn && (input.hit('Digit1') || input.hit('Digit2') || input.hit('Digit3') || input.mouse.wheel)) {
+        const i = input.hit('Digit1') ? 0 : input.hit('Digit2') ? 1 : input.hit('Digit3') ? 2 : A.index;
+        X.holster(); this.hudDirty = true; input.mouse.wheel = 0; if (i === A.index) this.audio.play('raise');
+      }
+      const wantSwing = !T.cook && (input.hit('KeyV') || (X.drawn && (input.mouse.leftPressed || (input.mouse.left && !X.busy()))));
+      if (wantSwing && !A.swap) {
+        if (!X.drawn && A.reload) { A.resetReloadPose(); A.reload = null; }
         const lunge = !X.busy() && p.grounded && this.lungeTarget();
         if (X.start(lunge ? 'lunge' : null) && lunge) {
-          this.lungeT = 0.2; this.lungeTo = lunge.t - 1.4; this.audio.play('axeLunge');
+          this.lungeT = 0.2; this.lungeTo = lunge.t - 1.4; this.audio.play('bladeLunge');
         }
       }
       if (this.lungeT > 0) { // dash in until we're in swinging distance
-        this.lungeT -= dt; this.lungeTo -= AXE.lungeSpeed * dt;
+        this.lungeT -= dt; this.lungeTo -= MACHETE.lungeSpeed * dt;
         const f = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
-        if (this.lungeTo > 0) { p.vel.x = f.x * AXE.lungeSpeed; p.vel.z = f.z * AXE.lungeSpeed; }
+        if (this.lungeTo > 0) { p.vel.x = f.x * MACHETE.lungeSpeed; p.vel.z = f.z * MACHETE.lungeSpeed; }
       }
-      const xev = X.update(dt);
-      if (xev === 'whoosh') this.audio.play('axeSwing', { heavy: X.swing?.kind === 'lunge' });
-      if (xev === 'hit') this.axeHit(X.swing?.kind || 'R');
-      A.holster = !!T.cook || T.throwAnim > 0 || X.busy();
+      const moving = p.grounded ? Math.min(1, Math.hypot(p.vel.x, p.vel.z) / 6) : 0;
+      const xev = X.update(dt, moving, this.time);
+      if (xev === 'whoosh') { this.audio.play('bladeSwing', { heavy: X.swing?.kind === 'lunge' }); const sd = X.swing?.kind === 'L' ? 1 : -1; A.camKick.impulse(-0.8, sd * 1.5, sd * 2.5); }
+      if (xev === 'hit') this.bladeHit(X.swing?.kind || 'R');
+      A.bladeOut = X.out();
+      A.holster = !!T.cook || T.throwAnim > 0 || X.out();
       ads = A.update(dt, input, p, this.aim);
       this.adsNow = ads;
       // dip the gun while the off hand cooks / throws
       this.throwPose = damp(this.throwPose || 0, A.holster ? 1 : 0, 14, dt);
       A.root.position.y -= 0.045 * this.throwPose; A.root.position.x += 0.03 * this.throwPose; A.root.rotation.x -= 0.12 * this.throwPose;
-      this.axePose = damp(this.axePose || 0, X.busy() ? 1 : 0, 16, dt);
-      A.root.position.y -= 0.32 * this.axePose; A.root.rotation.x -= 0.5 * this.axePose;
+      this.bladePose = damp(this.bladePose || 0, X.out() ? 1 : 0, 16, dt);
+      A.root.position.y -= 0.32 * this.bladePose; A.root.rotation.x -= 0.5 * this.bladePose; A.root.visible = this.bladePose < 0.97;
       this.vmFrag.visible = !!T.cook;
       if (T.cook) this.vmFrag.position.y = -0.16 + Math.sin(this.time * 3) * 0.004;
     } else if (this.state === 'dead') {
@@ -770,19 +763,19 @@ class Game {
     ch.style.opacity = (1 - Math.min(1, ads * 2.5)) * (p.sprinting ? 0.25 : 1);
     if (this.hudDirty) {
       this.hudDirty = false;
-      $('mag').textContent = w.mag; $('reserve').textContent = w.reserve;
-      $('wname').textContent = w.def.name; $('wtype').textContent = w.def.type;
-      $('mag').classList.toggle('low', w.mag <= Math.ceil(w.def.mag * 0.25));
+      const bl = this.blade.drawn;
+      $('wname').textContent = bl ? MACHETE.name : w.def.name; $('wtype').textContent = bl ? MACHETE.type : w.def.type;
+      $('mag').classList.toggle('low', !bl && w.mag <= Math.ceil(w.def.mag * 0.25));
       $('score').textContent = this.score.toLocaleString();
       $('kills').textContent = this.kills;
       $('pts').textContent = this.pts.toLocaleString();
-      const slots = [0, 1, 2].map((i) => { const w2 = A.weapons[i]; return `<span class="slot${i === A.index ? ' sel' : ''}${w2 ? '' : ' empty'}">${i + 1}${w2 ? ' ' + w2.def.short : ''}</span>`; }).join('');
+      const slots = [0, 1, 2].map((i) => { const w2 = A.weapons[i]; return `<span class="slot${i === A.index && !bl ? ' sel' : ''}${w2 ? '' : ' empty'}">${i + 1}${w2 ? ' ' + w2.def.short : ''}</span>`; }).join('') + `<span class="slot${bl ? ' sel' : ''}">4 ${MACHETE.short}</span>`;
       if ($('slots').innerHTML !== slots) $('slots').innerHTML = slots;
       const T = this.throwables;
       $('t-frag').textContent = T.frags; $('t-scr').textContent = T.screamers;
-      $('t-frag').parentNode.classList.toggle('none', !T.frags); $('t-axe').classList.toggle('none', !this.axe.owned); $('t-scr').parentNode.classList.toggle('none', !T.screamers);
+      $('t-frag').parentNode.classList.toggle('none', !T.frags); $('t-scr').parentNode.classList.toggle('none', !T.screamers);
     }
-    $('mag').textContent = w.mag; $('reserve').textContent = w.reserve;
+    if (this.blade.drawn) { $('mag').textContent = '∞'; $('reserve').textContent = 'BLADE'; } else { $('mag').textContent = w.mag; $('reserve').textContent = w.reserve; }
     const ck = this.throwables.cook, cookEl = $('cook');
     cookEl.classList.toggle('on', !!ck);
     if (ck) {
@@ -791,7 +784,7 @@ class Game {
       $('cook-t').textContent = left.toFixed(1);
     }
     const hint = $('hint');
-    const hintText = A.reload ? 'RELOADING' : w.mag === 0 && w.reserve === 0 ? 'NO AMMO — SWAP' : w.mag <= Math.ceil(w.def.mag * 0.25) ? 'R  RELOAD' : '';
+    const hintText = this.blade.drawn ? '' : A.reload ? 'RELOADING' : w.mag === 0 && w.reserve === 0 ? 'NO AMMO — SWAP' : w.mag <= Math.ceil(w.def.mag * 0.25) ? 'R  RELOAD' : '';
     if (hint.textContent !== hintText) hint.textContent = hintText;
     $('hpfill').style.width = `${(p.health / p.maxHealth) * 100}%`;
     $('armorrow').classList.toggle('on', p.armor > 0); $('armorfill').style.width = `${Math.min(100, (p.armor / 150) * 100)}%`;
@@ -824,6 +817,7 @@ window.game = game;
 window.__ready = true;
 
 // Hooks for automated testing (headless browsers have no pointer lock).
+window.__bladePoses = BLADE_POSES;
 window.__debug = {
   start() { game.forceLock = true; game.audio.init(); game.input.locked = true; game.restart(true); game.show(null); },
   set(o) { Object.assign(game.input.mouse, o); },

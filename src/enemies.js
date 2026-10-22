@@ -36,7 +36,7 @@ export const TYPES = {
 // part index groups: severing an upper limb takes the whole arm/leg
 const SEVER_GROUP = { 2: [2, 3], 3: [3], 4: [4, 5], 5: [5], 6: [6, 7], 7: [7], 8: [8, 9], 9: [9], 1: [1] };
 const SEVER_THR = [1e9, 50, 55, 45, 55, 45, 75, 60, 75, 60];
-const SEVER_F = { axe: 2.4, ar: 0.55, sg: 1.0, mr: 1.45, smg: 0.5, lmg: 0.7, rv: 1.35, boom: 2.2 };
+const SEVER_F = { machete: 2.8, ar: 0.55, sg: 1.0, mr: 1.45, smg: 0.5, lmg: 0.7, rv: 1.35, boom: 2.2 };
 const LIMB_MAX = 10, MAXI = 72 + LIMB_MAX;
 const SPIT_CHARGE = 0.85, SPIT_G = 14;
 
@@ -208,7 +208,7 @@ export class Horde {
     if (this.screamT <= 0) { this.hooks.audio.play('scream', this.spatial(e)); this.screamT = 0.25; }
   }
   // quick melee: nearest husk in a short cone in front of the player
-  // every living zombie in a sweeping arc, nearest first (axe cleave)
+  // every living zombie in a sweeping arc, nearest first (machete cleave)
   meleeCleave(o, f, range, cone, max) {
     const out = [];
     for (const e of this.enemies) {

@@ -6,7 +6,6 @@ const SPOTS = [
   { id: 'sg', x: 8, y: 1.45, z: -18.77, ny: 0 },                // container north face
   { id: 'mr', x: 13.17, y: 1.45, z: 10.6, ny: -Math.PI / 2 },   // container west face
   { id: 'lmg', x: 18.77, y: 1.45, z: -13.2, ny: -Math.PI / 2 }, // container west face
-  { id: 'axe', x: 18.77, y: 1.45, z: -16.7, ny: -Math.PI / 2 }, // same container, fire-axe board
 ];
 
 function boardTexture(name, cost) {

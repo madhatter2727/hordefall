@@ -1,4 +1,4 @@
-// Throwables: frag grenades (G, hold to cook) and the Screamer, an original wind-up noisemaker decoy (Q / 4).
+// Throwables: frag grenades (G, hold to cook) and the Screamer, an original wind-up noisemaker decoy (Q).
 // Simple sphere-vs-AABB physics against the arena colliders so both bounce off walls, crates and the ground.
 import * as THREE from 'three';
 import { clamp, rand, damp } from './core/util.js';
@@ -112,7 +112,7 @@ export class Throwables {
         this.hooks.feed?.('<b>COOKED OFF</b>');
       } else if (!input.down('KeyG')) { this.launch('frag', left); this.cook = null; }
     }
-    if ((input.hit('KeyQ') || input.hit('Digit4')) && !this.cook && this.throwAnim <= 0) {
+    if (input.hit('KeyQ') && !this.cook && this.throwAnim <= 0) {
       if (this.screamers > 0) { this.screamers--; this.launch('screamer'); this.hooks.onCount?.(); } else this.hooks.audio.play('dry');
     }
   }
