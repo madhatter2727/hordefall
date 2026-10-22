@@ -1,7 +1,7 @@
 // Fire axe: buyable heavy melee that takes over V. Procedural model + keyframed viewmodel swings
 // (alternating right/left sweeps, a lunging overhead chop when a target is a few metres out).
 import * as THREE from 'three';
-import { clamp, lerp } from '../core/util.js';
+import { clamp } from '../core/util.js';
 
 export const AXE = {
   id: 'axe', name: 'FIRE AXE', short: 'AXE', type: 'Heavy melee', cost: 1500,
@@ -39,33 +39,48 @@ export function axeModel(materials = {}) {
   return g;
 }
 
-// keyframes: [t, px, py, pz, rx, ry, rz]
-const SWING_R = [
-  [0.0, 0.42, -0.6, -0.35, 0.2, 0, -0.4],
-  [0.13, 0.3, 0.02, -0.25, 0.75, -0.25, -1.05],
-  [0.2, 0.08, -0.06, -0.5, -0.35, -0.55, 1.25],
-  [0.3, -0.3, -0.26, -0.38, -0.7, -0.4, 1.85],
-  [0.45, -0.34, -0.42, -0.34, -0.6, -0.3, 1.9],
-  [0.66, 0.42, -0.6, -0.35, 0.2, 0, -0.4],
+// keyframes: [t, hand position, haft direction, blade-edge direction] in viewmodel-camera space (-Z forward)
+const K = (t, p, d, b) => ({ t, p: new THREE.Vector3(...p), q: basis(d, b) });
+function basis(d, b) {
+  const Y = new THREE.Vector3(...d).normalize(), X = new THREE.Vector3(...b).multiplyScalar(-1); // the edge sits on local -X
+  X.addScaledVector(Y, -X.dot(Y)).normalize();
+  const Z = new THREE.Vector3().crossVectors(X, Y);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+}
+const REST = [[0.45, -0.6, -0.45], [0.3, 0.95, 0.1], [-0.95, 0.3, 0]];
+// diagonal slash in the screen plane: head starts up-right, cuts through the centre, ends low-left
+const SWING = [
+  K(0, ...REST),
+  K(0.13, [0.28, -0.1, -0.5], [0.5, 0.85, 0.05], [-0.85, 0.5, 0]),
+  K(0.2, [0.12, -0.18, -0.55], [-0.6, 0.5, -0.6], [-0.5, -0.6, 0]),
+  K(0.3, [-0.18, -0.3, -0.5], [-0.9, -0.3, -0.3], [0.3, -0.9, 0]),
+  K(0.45, [-0.3, -0.42, -0.45], [-0.8, -0.55, 0.1], [0.55, -0.8, 0]),
+  K(0.66, ...REST),
 ];
+const LREST = [[0.3, -0.62, -0.45], [0.05, 0.95, 0.3], [0, 0.3, -0.95]];
+// overhead chop: raised behind the head, comes down through the middle of the screen
 const LUNGE = [
-  [0.0, 0.3, -0.6, -0.3, 0.4, -Math.PI / 2, 0],
-  [0.15, 0.12, 0.12, -0.2, 1.1, -Math.PI / 2, 0.15],
-  [0.26, 0.04, -0.12, -0.55, -1.15, -Math.PI / 2, 0.05],
-  [0.36, 0.02, -0.36, -0.5, -1.7, -Math.PI / 2, 0],
-  [0.55, 0.05, -0.45, -0.45, -1.6, -Math.PI / 2, 0],
-  [0.78, 0.3, -0.6, -0.3, 0.4, -Math.PI / 2, 0],
+  K(0, ...LREST),
+  K(0.15, [0.1, -0.05, -0.5], [0.1, 0.7, 0.7], [0, 0.7, -0.7]),
+  K(0.25, [0.06, -0.12, -0.6], [0.05, 0.55, -0.85], [0, -0.85, -0.5]),
+  K(0.36, [0.04, -0.3, -0.6], [0, -0.3, -0.95], [0, -0.95, 0.3]),
+  K(0.55, [0.05, -0.42, -0.55], [0, -0.6, -0.8], [0, -0.8, 0.6]),
+  K(0.78, ...LREST),
 ];
 const HIT_T = { R: 0.19, L: 0.19, lunge: 0.25 };
 const END_T = { R: 0.66, L: 0.66, lunge: 0.78 };
+const MIRROR = new THREE.Matrix4().makeScale(-1, 1, 1);
 
-function sample(K, t, mirror) {
-  let i = 0; while (i < K.length - 2 && t > K[i + 1][0]) i++;
-  const a = K[i], b = K[i + 1], u = clamp((t - a[0]) / (b[0] - a[0]), 0, 1), s = u * u * (3 - 2 * u);
-  const o = [];
-  for (let k = 1; k < 7; k++) o.push(lerp(a[k], b[k], s));
-  if (mirror) { o[0] = -o[0]; o[4] = -o[4]; o[5] = -o[5]; }
-  return o;
+function sample(keys, t, mirror, outP, outQ) {
+  let i = 0; while (i < keys.length - 2 && t > keys[i + 1].t) i++;
+  const a = keys[i], b = keys[i + 1], u = clamp((t - a.t) / (b.t - a.t), 0, 1), s = u * u * (3 - 2 * u);
+  outP.lerpVectors(a.p, b.p, s); outQ.slerpQuaternions(a.q, b.q, s);
+  if (mirror) { // reflect the pose across the screen's vertical axis, keeping a proper rotation
+    outP.x = -outP.x;
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(outQ), X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3();
+    m.extractBasis(X, Y, Z); X.x = -X.x; Y.x = -Y.x; Z.x = -Z.x; X.negate();
+    outQ.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, new THREE.Vector3().crossVectors(X, Y)));
+  }
 }
 
 export class AxeVM {
@@ -77,7 +92,7 @@ export class AxeVM {
     const sleeve = materials?.sleeve || stdMat({ color: '#3b4032', roughness: 0.95 });
     const fist = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), glove); fist.scale.set(1.05, 1.25, 0.95); fist.position.set(0, 0.05, 0.004); this.root.add(fist);
     const knuckles = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.04, 0.07, 10), glove); knuckles.rotation.x = Math.PI / 2; knuckles.position.set(0, 0.05, -0.02); this.root.add(knuckles);
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.5, 12), sleeve); arm.rotation.x = Math.PI / 2 - 0.25; arm.position.set(0.02, -0.02, 0.27); this.root.add(arm);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.07, 12), sleeve); cuff.position.set(0, -0.03, 0.03); cuff.rotation.x = 0.5; this.root.add(cuff);
     this.root.traverse((m) => { if (m.isMesh) m.castShadow = false; });
     this.owned = false; this.swing = null; this.side = 1; this.queued = false;
   }
@@ -96,8 +111,7 @@ export class AxeVM {
     S.t += dt;
     if (!S.whoosh && S.t > 0.1) { S.whoosh = true; ev = 'whoosh'; }
     if (!S.hit && S.t >= HIT_T[S.kind]) { S.hit = true; ev = 'hit'; }
-    const K = S.kind === 'lunge' ? LUNGE : SWING_R, o = sample(K, S.t, S.kind === 'L');
-    this.root.position.set(o[0], o[1], o[2]); this.root.rotation.set(o[3], o[4], o[5]);
+    sample(S.kind === 'lunge' ? LUNGE : SWING, S.t, S.kind === 'L', this.root.position, this.root.quaternion);
     this.root.visible = true;
     if (S.t >= END_T[S.kind] || (this.queued && S.t > HIT_T[S.kind] + 0.2)) {
       const q = this.queued; this.swing = null; this.queued = false;

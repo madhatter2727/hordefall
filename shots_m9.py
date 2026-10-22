@@ -55,5 +55,33 @@ with sync_playwright() as p:
         r = json.loads(res)
         for o in r['out']: print(json.dumps(o))
         print('horde.update ms/frame avg', r['avgMs'], 'worst', r['worstMs'])
+    if want('axe'):
+        ev("game.horde.reset(); __debug.teleport(0, 0.05, 14); __debug.look(0, -0.05); __debug.pts(5000); game.buy('axe')"); gt(0.4)
+        # pose frames (world paused so each frame shows an exact swing time)
+        ev("game.state = 'paused'")
+        for k, t in [('R', 0.13), ('R', 0.2), ('R', 0.3), ('L', 0.2), ('lunge', 0.27), ('lunge', 0.36)]:
+            ev(f"(() => {{ const X = game.axe; X.swing = null; X.queued = false; X.side = '{k}' === 'L' ? -1 : 1; X.start('{k}' === 'lunge' ? 'lunge' : null); X.update({t}); game.arsenal.holster = true; }})()"); pg.wait_for_timeout(1500); shot(f'axe-pose-{k}-{t}')
+        ev("game.axe.swing = null; game.state = 'play'"); gt(0.3)
+        ev("(() => { const V = game.player.pos.constructor; for (const [x, z] of [[-0.9, 12.3], [0.1, 12.0], [1.0, 12.4]]) { const e = game.horde.spawn('runner', new V(x, 0, z), true); e.wander.copy(e.pos); e.wanderT = 99; e.speed = 0.01; e.yaw = 0; } })()"); gt(0.6)
+        k0 = ev("game.kills")
+        ev("__debug.key('KeyV', true)"); ev("__debug.frames(2)"); ev("__debug.key('KeyV', false)")
+        t0 = ev("game.time")
+        while ev("game.time") - t0 < 0.21: pg.wait_for_timeout(10)
+        shot('axe-hit')
+        gt(0.15); shot('axe-hit2'); gt(0.5); shot('axe-after')
+        print('axe kills', ev("game.kills") - k0, 'alive', ev("game.horde.aliveCount()"))
+        # lunge at a husk 4 m out
+        ev("game.horde.reset(); (() => { const V = game.player.pos.constructor; const e = game.horde.spawn('runner', new V(0, 0, 10), true); e.wander.copy(e.pos); e.wanderT = 99; e.speed = 0.01; })()"); gt(0.5)
+        z0 = ev("game.player.pos.z"); ev("__debug.key('KeyV', true)"); ev("__debug.frames(2)"); ev("__debug.key('KeyV', false)"); gt(0.6)
+        print('lunge moved', round(z0 - ev("game.player.pos.z"), 2), 'kills', ev("game.kills") - k0); shot('axe-lunge')
+        # wall board
+        ev("game.horde.reset(); __debug.teleport(17.0, 0.05, -16.7); __debug.look(-Math.PI / 2, -0.12); game.axe.reset(); game.arsenal.axeOwned = false"); gt(0.5); shot('axe-wall')
+        print('prompt', ev("document.getElementById('buyprompt').textContent"))
+    if want('sky'):
+        tag = sys.argv[4] if len(sys.argv) > 4 else 'x'
+        ev("game.horde.reset(); __debug.teleport(0, 2.4, 3.5)"); 
+        for i, (yaw, pitch) in enumerate([(0.0, 0.12), (2.4, 0.1), (-1.9, 0.16)]):
+            ev(f"__debug.look({yaw}, {pitch})"); gt(0.6); shot(f'sky-{tag}-{i}')
+        ev("__debug.teleport(-16, 5.3, -8); __debug.look(0.6, 0.05)"); gt(0.6); shot(f'sky-{tag}-3')
     print('ERRORS:', errs[:5])
     b.close()

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildSkyline } from './skyline.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { corrugated, crateWood, facade } from './textures.js';
 import { pbr } from '../assets.js';
@@ -538,22 +539,10 @@ export function buildArena(scene, quality, A) {
     });
   }
 
-  // ---------- distant skyline in the haze ----------
-  const skyline = [];
-  for (let i = 0; i < 70; i++) {
-    const a = (i / 70) * Math.PI * 2 + r() * 0.05, d = 70 + r() * 50;
-    const w = 6 + r() * 14, h = 18 + r() * 45;
-    const g = tiledBox(w, h, w, 1 / 12); g.rotateY(-a); g.translate(Math.cos(a) * d, h / 2, Math.sin(a) * d);
-    skyline.push(g);
-    if (r() < 0.6) { const w2 = w * (0.45 + r() * 0.3), h2 = 4 + r() * 12; const t = tiledBox(w2, h2, w2, 1 / 12); t.rotateY(-a); t.translate(Math.cos(a) * d, h + h2 / 2, Math.sin(a) * d); skyline.push(t); }
-    if (r() < 0.3) { const m = new THREE.CylinderGeometry(0.15, 0.15, 6 + r() * 8, 4); m.translate(Math.cos(a) * d + (r() - 0.5) * w * 0.5, h + 4, Math.sin(a) * d); skyline.push(m.toNonIndexed().index ? m : tiledBox(0.3, 8 + r() * 6, 0.3, 1).translate(Math.cos(a) * d, h + 5, Math.sin(a) * d)); }
-  }
-  const fac = facade({ seed: 7 });
-  const skyMat = new THREE.MeshStandardMaterial({ map: fac.map, emissiveMap: fac.emissiveMap, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0.8, roughness: 1, color: '#6f6670' });
-  const sk = new THREE.Mesh(mergeGeometries(skyline), skyMat);
-  scene.add(sk);
+  // ---------- distant skyline in the haze (see skyline.js) ----------
+  const sky = buildSkyline(scene);
 
-  return { colliders, spawns, lights, fires, nav: buildNav(colliders), stats: { facadeTris } };
+  return { colliders, spawns, lights, fires, nav: buildNav(colliders), stats: { facadeTris, skyline: { buildings: sky.count, tris: sky.tris, drawCalls: sky.drawCalls } } };
 }
 
 // ---------- navigation grid: floor height per cell + blocked cells ----------

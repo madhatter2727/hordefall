@@ -224,3 +224,6 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 .gind.hot::before { animation: cookpulse .2s infinite alternate; }
 .gind i { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-origin: 0 0; }
 .gind i::after { content: ''; position: absolute; left: 26px; top: -7px; border: 7px solid transparent; border-left: 10px solid #ff5032; }
+
+/* radar */
+#minimap { position: absolute; left: 22px; top: 18px; border-radius: 50%; filter: drop-shadow(0 2px 10px rgba(0,0,0,.6)); pointer-events: none; }

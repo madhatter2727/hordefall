@@ -14,6 +14,7 @@ import { Post } from './post.js';
 import { Horde } from './enemies.js';
 import { Throwables, THROW, fragModel } from './throwables.js';
 import { AxeVM, AXE, axeModel } from './weapons/axe.js';
+import { Minimap } from './minimap.js';
 import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
@@ -120,6 +121,7 @@ class Game {
     this.vmFrag = fragModel(); this.vmFrag.scale.setScalar(0.55); this.vmFrag.position.set(-0.2, -0.16, -0.42); this.vmFrag.rotation.set(0.3, 0.4, 0.2); this.vmFrag.visible = false;
     this.vmCamera.add(this.vmFrag);
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS, { axe: { def: AXE, model: axeModel() } });
+    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
 
@@ -495,7 +497,7 @@ class Game {
         if (res.killed && Math.random() < (kind === 'lunge' ? 0.7 : 0.4)) { this.horde.sever(e, 1, dir); this.feed('<b>DECAPITATED</b>', 25); this.addScore(25); }
       }
       if (!e.type.hue) { this.splatsThisShot = 0; this.splatter(h.point, dir, def, true); }
-      this.fx.blood?.(h.point, dir, 1.6);
+      this.fx.bloodHit(h.point, dir, true); this.fx.bloodMist(h.point, dir, 1.8); this.fx.artery(h.point, dir, 1.2);
       if (res.killed) this.killFx(h, dir, { id: 'melee' }, res);
       this.onHit({ ...h, part: 'body' }, dmg, res);
     });
@@ -715,6 +717,7 @@ class Game {
     this.screenBlood = Math.max(0, (this.screenBlood || 0) - dt * 0.55); u.blood.value = this.screenBlood;
 
     this.updateHUD(raw, ads);
+    if (active) this.minimap.draw(raw, p, this.horde, this.barrels, this.throwables);
     this.cpuMs = lerp(this.cpuMs || 0, performance.now() - t0, 0.1);
     this.post.render();
     input.endFrame();
