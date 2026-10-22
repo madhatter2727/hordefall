@@ -236,7 +236,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.drinks.reset(); this.drinksOwned = {}; this.immuneT = 0; this.renderDrinks(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
+    this.perks = {}; this.drinksOwned = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.drinks.reset(); this.immuneT = 0; this.renderDrinks(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -284,7 +284,7 @@ class Game {
   }
   renderDrinks() {
     const box = $('drinkicons');
-    box.innerHTML = DRINKS.list.filter((d) => this.drinksOwned[d.id]).map((d) => `<div class="dk" style="--c:${d.color}" title="${d.name}"><img src="${drinkIconURL(d)}" alt=""><span>${d.name.split(' ')[0]}</span></div>`).join('');
+    box.innerHTML = DRINKS.list.filter((d) => this.drinksOwned[d.id]).map((d) => `<div class="dk" style="--c:${d.color}" title="${d.name}"><img src="${drinkIconURL(d)}" alt=""><span>${d.name.split(' ').slice(0, -1).join(' ')}</span></div>`).join('');
   }
   // LAST GASP TONIC: a killing blow puts you back on your feet once
   secondWind() {

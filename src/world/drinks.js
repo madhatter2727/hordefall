@@ -91,7 +91,7 @@ export class Drinks {
     const top = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.033, 0.012, 20), new THREE.MeshStandardMaterial({ color: '#c9ccd0', metalness: 1, roughness: 0.25 })); top.position.y = 0.066;
     const tab = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.002, 6, 12), top.material); tab.position.set(0.01, 0.073, 0); tab.rotation.x = Math.PI / 2;
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), new THREE.MeshStandardMaterial({ color: '#4a4b4c', roughness: 1 })); hand.scale.set(0.8, 1.15, 0.85); hand.position.set(0.028, -0.01, 0.012);
-    this.vm.add(body, top, tab, hand);
+    this.vm.add(body, top, tab); void hand;
   }
   target(pos, look) {
     for (const m of this.list) {
@@ -124,8 +124,8 @@ export class Drinks {
     const A = this.anim; if (!A) return;
     A.t += dt; const T = DRINKS.drinkTime, k = A.t / T;
     const up = smooth(clamp01(k / 0.25)), down = smooth(clamp01((k - 0.82) / 0.18)), tip = smooth(clamp01((k - 0.25) / 0.2)) * (1 - down);
-    this.vm.position.set(0.05 - 0.07 * tip, -0.32 + 0.22 * up + 0.06 * tip - 0.3 * down, -0.3 + 0.1 * tip);
-    this.vm.rotation.set(1.35 * tip + 0.15, 0.2, -0.25 * up + 0.3 * tip);
+    this.vm.position.set(0.04 - 0.04 * tip, -0.3 + 0.2 * up + 0.03 * tip - 0.3 * down, -0.36 + 0.04 * tip);
+    this.vm.rotation.set(0.75 * tip, 0.15, -0.2 * up + 0.15 * tip);
     if (k > 0.3 && !A.glug) { A.glug = true; this.hooks.audio.play('drinkGulp'); }
     if (k > 0.75 && !A.applied) { A.applied = true; this.hooks.buy(A.m.d); }
     if (k >= 1) { this.vm.visible = false; this.anim = null; }
