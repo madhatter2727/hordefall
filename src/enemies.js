@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
 import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE } from './tuning.js';
+import { NavGrid } from './nav.js';
 import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE, GAIT, blendLayers } from './rig.js';
 
 // ---------------------------------------------------------------------------
@@ -79,9 +80,10 @@ export class Horde {
     this.pool = [];
     this.enemies = [];
     // flow field
-    const nav = arena.nav; this.nav = nav;
-    this.dist = new Int16Array(nav.N * nav.N).fill(-1);
-    this.flowT = 0;
+    this.nav = new NavGrid(arena.colliders, ARENA.half, 0.5);
+    this.flowT = 0; this.playerF = null; this.lureF = null;
+    this.navStats = { sidesteps: 0, vaults: 0, climbs: 0, respawns: 0, builds: 0, buildMs: 0 };
+    this._v = new THREE.Vector3();
     this.hash = new Map();
     this.wave = 0; this.toSpawn = 0; this.spawnT = 0; this.intermission = 0; this.running = false; this.lures = [];
     this.growlT = 0; this.alertT = 0; this.screamT = 0;
@@ -256,6 +258,7 @@ export class Horde {
     e.crawl = false; e.crawlRef = false; e.armless = false; e.stumps = []; e.facePlayer = false;
     e.spitCd = rand(1.2, 2.5); e.charge = -1; e.orb = null; e.strafe = Math.random() < 0.5 ? -1 : 1; e.strafeT = rand(1.5, 3); e.spitRecoil = 0;
     e.bs = 'walk'; e.bt = 0; e.chargeCd = 3; e.slamCd = 2; e.stunDur = 1; e.chargeDir = e.chargeDir || new THREE.Vector3(); e.chargeHit = false; e.prePos = e.prePos || new THREE.Vector3();
+    e.stk = { t: 0, x: at.x, z: at.z, fd: 1e9, n: 0, side: 1, sideT: 0 }; e.navNext = -1; e.navDh = 0; e.respawned = 0;
     e.aware = !idle; e.alertIn = undefined; e.wander = new THREE.Vector3(rand(-28, 28), 0, rand(-28, 28)); e.wanderT = rand(4, 9);
     // walk in through the nearest gate
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
@@ -283,42 +286,68 @@ export class Horde {
   }
 
   // ---------------------------------------------------------------- navigation
-  cellOf(x, z) { const N = this.nav.N, H = this.nav.H; const gx = Math.floor(x + H), gz = Math.floor(z + H); if (gx < 0 || gz < 0 || gx >= N || gz >= N) return -1; return gz * N + gx; }
-  buildFlow() {
-    const { N, height, blocked } = this.nav, dist = this.dist;
-    dist.fill(-1);
-    const start = this.cellOf(this.player.pos.x, this.player.pos.z); if (start < 0) return;
-    const q = new Int32Array(N * N); let qh = 0, qt = 0;
-    dist[start] = 0; q[qt++] = start;
-    const pY = this.player.pos.y;
-    while (qh < qt) {
-      const c = q[qh++], cx = c % N, cz = (c / N) | 0, ch = c === start ? pY : height[c];
-      for (let k = 0; k < 4; k++) {
-        const nx = cx + (k === 0 ? 1 : k === 1 ? -1 : 0), nz = cz + (k === 2 ? 1 : k === 3 ? -1 : 0);
-        if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
-        const n = nz * N + nx;
-        if (dist[n] >= 0 || blocked[n]) continue;
-        if (c !== start && Math.abs(height[n] - ch) > 0.55) continue;
-        dist[n] = dist[c] + 1; q[qt++] = n;
-      }
+  // flow fields toward the player (and an active Screamer); rebuilt when the target changes cell
+  updateFields(dt) {
+    const P = this.player, nav = this.nav;
+    this.flowT -= dt;
+    const pc = nav.cellOf(P.pos.x, P.pos.z);
+    if (!this.playerF || (pc !== this.playerF.cell && this.flowT < 0.4) || this.flowT <= 0) { // at most ~5 rebuilds/s
+      const t0 = performance.now();
+      this.playerF = nav.build(P.pos.x, P.pos.z, P.pos.y, 'player'); this.flowT = 0.6;
+      this.navStats.builds++; this.navStats.buildMs = performance.now() - t0;
     }
+    const L = this.lures[0];
+    if (L) { const lc = nav.cellOf(L.pos.x, L.pos.z); if (!this.lureF || this.lureF.cell !== lc) this.lureF = nav.build(L.pos.x, L.pos.z, L.pos.y, 'lure'); }
+    else this.lureF = null;
   }
-  flowDir(e, out) {
-    const { N, H } = this.nav, c = this.cellOf(e.pos.x, e.pos.z);
-    if (c < 0 || this.dist[c] < 0) return false;
-    const cx = c % N, cz = (c / N) | 0; let best = this.dist[c], bx = 0, bz = 0;
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dz) continue;
-      const nx = cx + dx, nz = cz + dz; if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
-      const d = this.dist[nz * N + nx]; if (d < 0) continue;
-      if (dx && dz && (this.dist[cz * N + nx] < 0 || this.dist[nz * N + cx] < 0)) continue;
-      const score = d + (dx && dz ? 0.41 : 0);
-      if (score < best) { best = score; bx = dx; bz = dz; }
-    }
-    if (!bx && !bz) return false;
-    const tx = cx + bx - H + 0.5, tz = cz + bz - H + 0.5;
-    out.set(tx - e.pos.x, 0, tz - e.pos.z).normalize();
+  // steer along the flow field; remembers the next cell so the caller can climb/vault into it
+  navDir(e, F, out) {
+    const nav = this.nav, c = nav.next(F, e.pos.x, e.pos.z, e.pos.y);
+    e.navNext = c;
+    if (c < 0) return false;
+    const dh = nav.height[c] - e.pos.y;
+    e.navDh = dh;
+    const tc = Math.abs(dh) <= 0.6 ? nav.ahead(F, c, 3) : c;
+    nav.center(tc, this._v);
+    out.set(this._v.x - e.pos.x, 0, this._v.z - e.pos.z);
+    const l = out.length(); if (l < 1e-4) return false;
+    out.divideScalar(l);
     return true;
+  }
+  // a hidden spot to put a hopelessly stuck zombie back: a gate the player is not looking at
+  hiddenSpawn() {
+    const P = this.player, fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    let best = null, bs = -1e9;
+    for (const sp of this.arena.spawns) {
+      const dx = sp.x - P.pos.x, dz = sp.z - P.pos.z, d = Math.hypot(dx, dz);
+      const facing = (dx * fx + dz * fz) / (d || 1);
+      const score = -facing * 20 + d * 0.3 + rand(0, 4);
+      if (score > bs) { bs = score; best = sp; }
+    }
+    return best;
+  }
+  unstick(e, dir, dt, dist) {
+    // progress check once a second: did we get any closer (by flow cost) or move at all?
+    const S = e.stk;
+    S.t += dt;
+    if (S.t < 1) return;
+    const moved = Math.hypot(e.pos.x - S.x, e.pos.z - S.z);
+    const F = e.lured ? this.lureF : this.playerF, c = this.nav.cellOf(e.pos.x, e.pos.z);
+    const fd = F && c >= 0 ? F.dist[c] : 0;
+    const progressing = moved > 0.45 || fd < S.fd - 8;
+    const trying = e.aware && !e.outside && e.attackT < 0 && (dist > 2.2 || Math.abs(this.player.pos.y - e.pos.y) > 1.2) && !(e.type.ranged && dist < 18) && e.charge < 0 && e.stagger <= 0 && !(e.lured && dist < 3);
+    S.t = 0; S.x = e.pos.x; S.z = e.pos.z; S.fd = fd;
+    if (!e.aware && moved < 0.3) { e.wander.set(rand(-28, 28), 0, rand(-28, 28)); return; }
+    if (progressing || !trying) { S.n = 0; return; }
+    S.n++;
+    if (S.n === 2) { S.side = Math.random() < 0.5 ? -1 : 1; S.sideT = 0.9; this.navStats.sidesteps++; }
+    else if (S.n === 3 || S.n === 5) { if (e.grounded && !e.type.boss) { e.vy = 7.2; e.grounded = false; e.vel.addScaledVector(dir, 2.5); this.navStats.vaults++; } }
+    else if (S.n >= 7 && !e.type.boss) { // last resort: quietly re-enter through a gate the player can't see
+      const sp = this.hiddenSpawn();
+      e.pos.set(sp.x + rand(-2, 2), 0, sp.z + rand(-2, 2)); e.vel.set(0, 0, 0); e.vy = 0;
+      const g = Math.abs(sp.x) > Math.abs(sp.z) ? new THREE.Vector3(Math.sign(sp.x) * (ARENA.half - 1.5), 0, clamp(sp.z, -2.5, 2.5)) : new THREE.Vector3(clamp(sp.x, -2.5, 2.5), 0, Math.sign(sp.z) * (ARENA.half - 1.5));
+      e.gatePt.copy(g); e.outside = true; S.n = 0; e.respawned = (e.respawned || 0) + 1; this.navStats.respawns++;
+    }
   }
   groundAt(x, z, y, r = 0.15) {
     let g = 0;
@@ -540,8 +569,7 @@ export class Horde {
         }
       }
     }
-    this.flowT -= dt;
-    if (this.flowT <= 0) { this.buildFlow(); this.flowT = 0.25; }
+    this.updateFields(dt);
     // spatial hash for separation
     this.hash.clear();
     for (const e of this.enemies) {
@@ -577,6 +605,7 @@ export class Horde {
         dist = toP.length(); toP.divideScalar(dist || 1);
       }
       // steering
+      e.navNext = -1; e.navDh = 0;
       if (!e.aware && !e.outside) {
         e.wanderT -= dt;
         dir.copy(e.wander).sub(e.pos).setY(0);
@@ -586,20 +615,25 @@ export class Horde {
         dir.copy(e.gatePt).sub(e.pos).setY(0);
         if (dir.length() < 1.2) e.outside = false;
         dir.normalize();
-      } else if (e.lured || (dist < 4.5 && Math.abs(dy) < 1.2)) dir.copy(toP);
-      else if (!this.flowDir(e, dir)) dir.copy(toP);
+      } else {
+        // straight at the target when there's a clear walk, otherwise follow the flow field round obstacles
+        const F = e.lured ? this.lureF : this.playerF, tgt = e.lured ? lure.pos : P.pos;
+        if (dist < 7 && Math.abs(dy) < 0.7 && this.nav.clear(e.pos.x, e.pos.z, tgt.x, tgt.z, e.pos.y)) dir.copy(toP);
+        else if (!F || !this.navDir(e, F, dir)) dir.copy(toP);
+      }
       // flank: bend the approach sideways when far, converge when close
-      if (e.aware && !e.outside && !e.lured && dist > 7) {
+      if (e.aware && !e.outside && !e.lured && dist > 7 && e.navNext < 0) {
         const f = e.flank * clamp((dist - 7) / 12, 0, 1);
         const c = Math.cos(f), s = Math.sin(f); dir.set(dir.x * c - dir.z * s, 0, dir.x * s + dir.z * c);
       }
+      if (e.stk.sideT > 0) { e.stk.sideT -= dt; dir.set(dir.x - dir.z * e.stk.side * 1.4, 0, dir.z + dir.x * e.stk.side * 1.4).normalize(); }
       // separation
       sep.set(0, 0, 0);
       const kx = Math.floor(e.pos.x / 2) + 64, kz = Math.floor(e.pos.z / 2) + 64;
       for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
         const b = this.hash.get((kx + ox) * 256 + kz + oz); if (!b) continue;
         for (const o of b) {
-          if (o === e) continue;
+          if (o === e || Math.abs(o.pos.y - e.pos.y) > 1.1) continue; // a crowd below doesn't push you off a ledge
           const dx = e.pos.x - o.pos.x, dz = e.pos.z - o.pos.z, d2 = dx * dx + dz * dz;
           const rr = 0.75 * (e.scale + o.scale);
           if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); sep.x += (dx / d) * (rr - d) / rr; sep.z += (dz / d) * (rr - d) / rr; }
@@ -658,11 +692,22 @@ export class Horde {
       e.vy -= 18 * dt; e.pos.y += e.vy * dt;
       if (e.pos.y <= g) { if (!e.grounded && e.vy < -4) e.stagger = 0.15; e.pos.y = g; e.vy = 0; e.grounded = true; } else if (e.pos.y > g + 0.05) e.grounded = false;
       e.leapCd -= dt;
-      if (e.aware && !e.lured && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.brute && !e.crawl) {
+      if (e.aware && e.grounded && e.navNext >= 0 && e.navDh > 0.6 && e.leapCd <= 0 && !e.crawl) {
+        this.nav.center(e.navNext, this._v);
+        const hx = this._v.x - e.pos.x, hz = this._v.z - e.pos.z, hd = Math.hypot(hx, hz);
+        if (hd < 0.95) { // hop up onto the prop / container
+          e.vy = Math.sqrt(2 * 18 * (e.navDh + 0.55)); e.grounded = false; e.leapCd = 0.8;
+          const k = Math.max(2.2, Math.min(4, e.speed)) / (hd || 1); e.vel.x = hx * k; e.vel.z = hz * k;
+          this.navStats.climbs++;
+          if (e.navDh > 1.5) this.hooks.audio.play('growl', this.spatial(e, { brute: T.brute }));
+        }
+      }
+      if (e.aware && !e.lured && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.boss && !e.crawl) {
         e.vy = Math.sqrt(2 * 18 * (dy + 0.9)); e.leapCd = 2.2;
         const tt = e.vy / 18 * 1.6; e.vel.copy(toP).multiplyScalar(Math.min(9, dist / tt + 1)); e.grounded = false;
         this.hooks.audio.play('growl', this.spatial(e, { brute: false }));
       }
+      this.unstick(e, dir, dt, dist);
       // facing + gait
       // stride speed = actual ground speed this frame (after collisions), measured along the body
       const mvx = (e.pos.x - e.prePos.x) / dt, mvz = (e.pos.z - e.prePos.z) / dt;
