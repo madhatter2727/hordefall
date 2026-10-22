@@ -36,7 +36,7 @@ with sync_playwright() as p:
         for k, v in res.items(): print(k, '=>', json.dumps(v), flush=True)
         res.clear()
     if 'crate' in parts:
-      ev("__debug.pts(20000); __debug.teleport(-11.0, 0.05, 3.6); __debug.look(Math.PI / 2 + 0.12, -0.2)"); gt(0.5)
+      ev("__debug.pts(20000); __debug.teleport(-11.4, 0.05, 3.5); __debug.look(Math.PI / 2 + 0.12, -0.2)"); gt(0.5)
       res['crate prompt'] = prompt()
       pts0 = ev("game.pts"); F(); gt(1.9)
       res['paid'] = pts0 - ev("game.pts")
