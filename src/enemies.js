@@ -279,7 +279,7 @@ export class Horde {
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
     e.gatePt.copy(g); e.outside = Math.max(Math.abs(at.x), Math.abs(at.z)) > ARENA.half - 2;
     e.rig = this.takeRig(); e.ragdoll = false; e.ref = e.ref || {}; e.anim = null;
-    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.8, 0.74, 0.72] : [rand(0.9, 1.25), rand(0.85, 1.15), rand(0.85, 1.1)];
+    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.8, 0.74, 0.72] : [rand(0.88, 1.08), rand(0.9, 1.08), rand(0.85, 1.0)];
     e.rig.u.uTint.value.setRGB(...tint); e.rig.u.uHue.value = T.hue || 0;
     for (const a of Object.values(e.rig.actions)) a.time = rand(0, 3);
     if (T.boss) { const B = e.rig.bones; B.Spine2.scale.set(1.32, 1.12, 1.4); B.Neck.scale.setScalar(0.8); B.LeftArm.scale.setScalar(1.18); B.RightArm.scale.setScalar(1.18); B.LeftUpLeg.scale.set(1.2, 1, 1.2); B.RightUpLeg.scale.set(1.2, 1, 1.2); e.rig.u.uEmber.value = 1; }

@@ -53,14 +53,24 @@ const ZOMBIE_SHADER = (u) => (sh) => {
         // keeping its red channel as caked blood
         vec3 t = diffuseColor.rgb; float lum = dot(t, vec3(0.3, 0.59, 0.11));
         float red = clamp((t.r - max(t.g, t.b)) * 3.0, 0.0, 1.0);
+        // grime + rot masks in body space (cheap value noise, stable under animation)
+        float g1 = zn(vLocal * 1.6 + uSeed), g2 = zn(vLocal * 5.0 + 4.0), g3 = zn(vLocal * 0.7 + 19.0 + uSeed);
+        float grime = g1 * 0.6 + g2 * 0.4;
         #ifdef Z_SKIN
-          vec3 base = vec3(0.41, 0.38, 0.34) * (0.5 + lum * 2.2);
-          diffuseColor.rgb = mix(base, t * vec3(0.85, 0.35, 0.3), red * 0.7);
+          // rotting grey-green flesh: sallow base, olive rot patches, bruised purple, dark cavities from the bake
+          vec3 base = vec3(0.235, 0.25, 0.2) * (0.45 + lum * 1.7);
+          base = mix(base, vec3(0.17, 0.2, 0.11) * (0.6 + lum), smoothstep(0.45, 0.7, g3) * 0.8);
+          base = mix(base, vec3(0.16, 0.1, 0.14), smoothstep(0.62, 0.8, g1) * 0.5);
+          base *= 0.75 + g2 * 0.35;
+          diffuseColor.rgb = mix(base, t * vec3(0.7, 0.22, 0.18), red * 0.75);
         #endif
         #ifdef Z_CLOTH
           vec3 cl = vLocal.y / 9.0 > 0.98 ? uShirt : uPants;
-          vec3 base = cl * (0.55 + lum * 2.4);
-          diffuseColor.rgb = mix(base, t * vec3(0.8, 0.3, 0.25), red * 0.6);
+          vec3 base = cl * (0.45 + lum * 1.9);
+          base *= mix(vec3(1.0), vec3(0.42, 0.36, 0.28), smoothstep(0.35, 0.75, grime)); // dirt and soot
+          float stain = smoothstep(0.58, 0.72, g3 + (vLocal.y / 9.0 > 0.98 ? 0.1 : -0.05));
+          base = mix(base, vec3(0.13, 0.02, 0.015), stain * 0.85); // old blood soaked into the fabric
+          diffuseColor.rgb = mix(base, t * vec3(0.6, 0.18, 0.14), red * 0.6);
         #endif
       }
       diffuseColor.rgb *= uTint;
@@ -76,7 +86,10 @@ const ZOMBIE_SHADER = (u) => (sh) => {
       totalEmissiveRadiance += vec3(0.35, 1.0, 0.12) * uHue * uGlow * smoothstep(0.62, 0.8, zn(vLocal * 1.3 + 2.0));
       float crack = smoothstep(0.47, 0.5, zn(vLocal * 0.9 + 11.0)) * smoothstep(0.53, 0.5, zn(vLocal * 0.9 + 11.0));
       totalEmissiveRadiance += vec3(2.4, 0.7, 0.15) * uEmber * crack * (1.0 - wound);
-      totalEmissiveRadiance += vec3(0.9, 0.55, 0.4) * uFlash * 0.6;`);
+      { // hit flash: hot rim + a faint body glow, so a struck husk pops without turning into a white mannequin
+        float fres = pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 2.0);
+        totalEmissiveRadiance += vec3(1.0, 0.42, 0.22) * uFlash * (0.07 + fres * 0.75);
+      }`);
 };
 
 export class ZombieFactory {
@@ -110,7 +123,7 @@ export class ZombieFactory {
     const root = skClone(this.template);
     const R = { root, bones: {}, meshes: [], mats: [], u: null, mixer: new THREE.AnimationMixer(root), actions: {}, cur: null, stumps: [] };
     const u = (R.u = { uFlash: { value: 0 }, uDiss: { value: 0 }, uHue: { value: 0 }, uGlow: { value: 0 }, uEmber: { value: 0 }, uWound: { value: new Array(10).fill(0) }, uSeed: { value: Math.random() * 50 }, uTint: { value: new THREE.Color(1, 1, 1) }, uShirt: { value: new THREE.Color() }, uPants: { value: new THREE.Color() } });
-    const SH = [[0.42, 0.4, 0.36], [0.3, 0.33, 0.36], [0.4, 0.3, 0.24], [0.22, 0.26, 0.22], [0.45, 0.43, 0.4], [0.32, 0.12, 0.1]], PA = [[0.12, 0.14, 0.2], [0.18, 0.17, 0.15], [0.1, 0.1, 0.1], [0.22, 0.2, 0.16], [0.14, 0.16, 0.22]];
+    const SH = [[0.3, 0.28, 0.25], [0.18, 0.21, 0.24], [0.28, 0.2, 0.15], [0.16, 0.19, 0.15], [0.32, 0.3, 0.27], [0.24, 0.08, 0.07], [0.1, 0.1, 0.11]], PA = [[0.08, 0.1, 0.15], [0.14, 0.13, 0.11], [0.07, 0.07, 0.07], [0.16, 0.14, 0.1], [0.1, 0.12, 0.16]];
     u.uShirt.value.setRGB(...SH[Math.floor(Math.random() * SH.length)]); u.uPants.value.setRGB(...PA[Math.floor(Math.random() * PA.length)]);
     root.traverse((o) => {
       if (o.isBone) R.bones[o.name] = o;
