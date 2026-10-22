@@ -163,6 +163,47 @@ export class Audio {
       case 'casings': for (let i = 0; i < 6; i++) { const f = r(4200, 7400), t = 0.25 + i * r(0.03, 0.07); this.tone({ t, dur: 0.07, freq: f, gain: 0.05 }); this.tone({ t: t + 0.09, dur: 0.05, freq: f * 1.08, gain: 0.03 }); } this.burst({ dur: 0.08, type: 'bandpass', freq: 2500, q: 2, gain: 0.25 }); break;
       case 'speedload': this.burst({ dur: 0.05, type: 'bandpass', freq: 1700, q: 2.5, gain: 0.6 }); this.burst({ t: 0.06, dur: 0.04, type: 'bandpass', freq: 3600, q: 3, gain: 0.35 }); break;
       case 'cylIn': this.burst({ dur: 0.04, type: 'bandpass', freq: 2200, q: 3, gain: 0.8 }); this.tone({ dur: 0.08, freq: 260, freqEnd: 140, gain: 0.25 }); this.burst({ t: 0.02, dur: 0.03, type: 'highpass', freq: 5000, gain: 0.35 }); break;
+      // ---- M11: rare guns, salvage crate, forge ----
+      case 'lanceShot': { // capacitor snap + descending sci-fi sweep, no gunpowder
+        this.tone({ dur: 0.28, type: 'sawtooth', freq: 1900, freqEnd: 180, gain: 0.16, send: 0.5 });
+        this.tone({ dur: 0.2, type: 'square', freq: 960, freqEnd: 120, gain: 0.07 });
+        this.tone({ dur: 0.35, type: 'sine', freq: 140, freqEnd: 40, gain: 0.7 });
+        this.burst({ dur: 0.05, type: 'highpass', freq: 6000, gain: 0.5 }); this.burst({ dur: 0.4, type: 'bandpass', freq: 2400, q: 6, gain: 0.18, freqEnd: 600, send: 0.7 });
+        break;
+      }
+      case 'boltShot': // string twang + limb slap + the bolt hissing away
+        this.tone({ dur: 0.18, type: 'triangle', freq: 210, freqEnd: 150, gain: 0.5 }); this.tone({ dur: 0.1, type: 'sawtooth', freq: 420, freqEnd: 300, gain: 0.08 });
+        this.burst({ dur: 0.04, type: 'bandpass', freq: 1600, q: 2, gain: 0.8 }); this.burst({ t: 0.02, dur: 0.3, type: 'highpass', freq: 3500, gain: 0.18, freqEnd: 7000 });
+        break;
+      case 'crateOpen': this.burst({ dur: 0.25, type: 'bandpass', freq: 600, q: 3, gain: 0.5, freqEnd: 900 }); this.burst({ t: 0.22, dur: 0.06, type: 'bandpass', freq: 1800, q: 2, gain: 0.5 }); this.tone({ t: 0.25, dur: 0.9, type: 'triangle', freq: 523, gain: 0.07, send: 0.6 }); this.tone({ t: 0.3, dur: 0.9, type: 'triangle', freq: 784, gain: 0.05, send: 0.6 }); break;
+      case 'crateTick': { const f = 1400 - 700 * (o.k || 0); this.tone({ dur: 0.05, type: 'square', freq: f, gain: 0.05 }); this.burst({ dur: 0.02, type: 'bandpass', freq: 4000, q: 5, gain: 0.15 }); break; }
+      case 'crateLand': {
+        const n = o.rare ? [392, 494, 587, 784, 988] : [440, 554, 659];
+        n.forEach((f, i) => this.tone({ t: i * 0.07, dur: 0.7, type: 'triangle', freq: f, gain: 0.08, send: 0.7 }));
+        this.tone({ dur: 0.4, type: 'sine', freq: 110, freqEnd: 55, gain: 0.5 }); if (o.rare) this.burst({ dur: 1.2, type: 'bandpass', freq: 5000, q: 2, gain: 0.12, attack: 0.1, send: 0.8 });
+        break;
+      }
+      case 'crateClose': this.burst({ dur: 0.08, type: 'lowpass', freq: 500, gain: 0.7 }); this.tone({ dur: 0.12, type: 'sine', freq: 90, freqEnd: 50, gain: 0.5 }); break;
+      case 'crateJam': // gears seizing: grinding noise, sputtering buzz, a sad falling tone
+        this.burst({ dur: 0.9, type: 'bandpass', freq: 380, q: 4, gain: 0.6, freqEnd: 120 }); this.tone({ dur: 0.9, type: 'sawtooth', freq: 70, freqEnd: 40, gain: 0.2 });
+        for (let i = 0; i < 6; i++) this.burst({ t: 0.1 + i * 0.13, dur: 0.05, type: 'highpass', freq: 3000, gain: 0.3 });
+        this.tone({ t: 0.5, dur: 0.8, type: 'triangle', freq: 330, freqEnd: 150, gain: 0.1, send: 0.5 });
+        break;
+      case 'crateArrive': this.tone({ dur: 0.6, type: 'sine', freq: 660, freqEnd: 990, gain: 0.08, send: 0.6 }); this.burst({ dur: 0.3, type: 'lowpass', freq: 400, gain: 0.5 }); break;
+      case 'forgeStart': // heavy motor spinning up, belt whine, hydraulic hiss, sparks crackle; lasts ~3.4 s
+        this.burst({ dur: 0.12, type: 'lowpass', freq: 400, gain: 0.8 }); this.tone({ dur: 0.2, type: 'sine', freq: 60, freqEnd: 40, gain: 0.8 });
+        this.tone({ t: 0.2, dur: 3.2, type: 'sawtooth', freq: 45, freqEnd: 120, gain: 0.16, attack: 0.6 });
+        this.tone({ t: 0.3, dur: 3.1, type: 'square', freq: 220, freqEnd: 660, gain: 0.03, attack: 0.8, send: 0.4 });
+        this.burst({ t: 0.25, dur: 3.0, type: 'bandpass', freq: 900, q: 1.5, gain: 0.25, attack: 0.5, freqEnd: 2600 });
+        for (let i = 0; i < 14; i++) this.burst({ t: 0.6 + i * 0.2 + Math.random() * 0.1, dur: 0.03, type: 'highpass', freq: 4500, gain: 0.25 });
+        break;
+      case 'forgeDone': // hydraulic release + anvil clang + bright shimmer
+        this.burst({ dur: 0.6, type: 'highpass', freq: 2000, gain: 0.35, freqEnd: 800 });
+        [523, 1046, 1568, 2093].forEach((f, i) => this.tone({ t: 0.15, dur: 1.4 - i * 0.2, type: 'sine', freq: f * 1.003, gain: 0.12 / (i + 1), send: 0.8 }));
+        this.tone({ t: 0.15, dur: 0.3, type: 'triangle', freq: 180, freqEnd: 120, gain: 0.4 });
+        this.burst({ t: 0.4, dur: 1.2, type: 'bandpass', freq: 6000, q: 3, gain: 0.1, attack: 0.2, send: 0.9 });
+        break;
+      case 'forgeTake': [392, 587, 784, 1175].forEach((f, i) => this.tone({ t: i * 0.05, dur: 0.6, type: 'triangle', freq: f, gain: 0.09, send: 0.6 })); this.tone({ dur: 0.4, type: 'sine', freq: 90, freqEnd: 45, gain: 0.7 }); break;
       case 'buy': this.tone({ dur: 0.08, type: 'triangle', freq: 880, gain: 0.12 }); this.tone({ t: 0.07, dur: 0.18, type: 'triangle', freq: 1320, gain: 0.12, send: 0.3 }); this.burst({ dur: 0.05, type: 'highpass', freq: 5000, gain: 0.15 }); break;
       case 'perk': [392, 523, 659, 1046].forEach((f, i) => this.tone({ t: i * 0.06, dur: 0.5, type: 'triangle', freq: f, gain: 0.09, send: 0.6 })); this.burst({ dur: 0.6, type: 'bandpass', freq: 3000, q: 1, gain: 0.12, attack: 0.05, freqEnd: 6000, send: 0.5 }); break;
       case 'shopOpen': this.burst({ dur: 0.5, type: 'lowpass', freq: 300, gain: 0.5, freqEnd: 1200 }); this.tone({ dur: 0.6, type: 'sine', freq: 110, freqEnd: 220, gain: 0.25, send: 0.4 }); break;

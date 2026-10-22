@@ -656,6 +656,59 @@ function buildRV(M) {
 
 // Collimated red dot: drawn where the view ray is parallel to the bore, so it sits "at infinity",
 // stays on target while the gun sways and is only visible through the glass.
+// ======================================================================= rare crate guns
+// same shader setup as the source material, new colour (keeps the edge-wear + specular AA hooks)
+function tint(m, color, extra = {}) {
+  const c = m.clone(); c.color = new THREE.Color(color); Object.assign(c, extra);
+  c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey; return c;
+}
+function glowMat(color, k) { return new THREE.MeshStandardMaterial({ color: '#0d1014', emissive: new THREE.Color(color), emissiveIntensity: k, roughness: 0.35, metalness: 0.3 }); }
+
+// NX-2 AURORA LANCE: white ceramic marksman frame, emitter coils down the barrel, glowing cell in the mag
+function buildLance(M, dot) {
+  const ceramic = tint(M.fde, '#d8dce2'), dark = tint(M.polymer, '#252c3a'), blue = tint(M.darkMetal, '#2c3850');
+  const g = buildMR({ ...M, fde: ceramic, polymer: dark, darkMetal: blue }, dot);
+  const glow = glowMat('#58d6ff', 3.4), BY = -0.0605;
+  const coils = [];
+  for (let i = 0; i < 6; i++) { const t = new THREE.TorusGeometry(0.0175 - i * 0.0008, 0.0028, 8, 22); t.translate(0, BY, -(0.6 + i * 0.042)); coils.push(t); }
+  const fins = [];
+  for (const sx of [-1, 1]) { const f = rbx(0.003, 0.03, 0.2, sx * 0.03, -0.065, 0.46, 0.001); fins.push(f); }
+  const core = cyl(0.0058, 0.26, 0.82, BY, 12);
+  g.root.add(mesh(coils, glow), mesh(fins, ceramic), mesh([core], glow));
+  g.mag.add(mesh([rbx(0.0295, 0.012, 0.042, 0, -0.045, 0.102, 0.002), rbx(0.0295, 0.012, 0.042, 0, -0.085, 0.104, 0.002)], glow));
+  g.glow = glow; return g;
+}
+
+// SKV-3 HAILSTRIKE: rifle stock and grip carrying a bow riser, recurve limbs, a string and a loaded bolt
+function buildHail(M) {
+  const olive = tint(M.metal, '#4a5136'), sand = tint(M.polymer, '#7a6a4c');
+  const g = buildAR({ ...M, metal: olive, polymer: sand });
+  const RT = -0.0155, LY = -0.036, U0 = 0.47;
+  // riser block and limbs (swept back), string to the nock
+  const riser = [rbx(0.08, 0.034, 0.05, 0, LY, U0, 0.006), rbx(0.03, 0.02, 0.09, 0, LY - 0.022, U0 - 0.02, 0.004)];
+  const limbs = [], strs = [];
+  for (const sx of [-1, 1]) {
+    const c = new THREE.QuadraticBezierCurve3(new THREE.Vector3(sx * 0.035, LY, -U0), new THREE.Vector3(sx * 0.2, LY, -(U0 + 0.05)), new THREE.Vector3(sx * 0.27, LY, -(U0 - 0.09)));
+    const tube = new THREE.TubeGeometry(c, 16, 0.0075, 8); tube.scale(1, 0.7, 1); tube.translate(0, LY * 0.3, 0); limbs.push(tube);
+    const tip = new THREE.Vector3(sx * 0.27, LY * 1.3, -(U0 - 0.09)), nock = new THREE.Vector3(0, RT + 0.002, -0.17);
+    const d = tip.clone().sub(nock), L = d.length(); const s1 = new THREE.CylinderGeometry(0.0012, 0.0012, L, 5);
+    s1.translate(0, L / 2, 0); s1.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); s1.translate(nock.x, nock.y, nock.z); strs.push(s1);
+    limbs.push(new THREE.SphereGeometry(0.009, 10, 8).translate(tip.x, tip.y, tip.z)); // cam wheel
+  }
+  g.root.add(mesh(riser, M.darkMetal), mesh(limbs, M.black), mesh(strs, M.steel));
+  // the loaded bolt: carbon shaft, fletching, glowing charge head (hidden while it re-cocks)
+  const arrow = new THREE.Group();
+  const shaft = cyl(0.0032, 0.17, 0.6, RT + 0.004, 10);
+  const fl = []; for (let i = 0; i < 3; i++) { const f = bx(0.0006, 0.012, 0.04, 0, 0, 0); f.translate(0, 0.006, 0); f.rotateZ(i * 2.094); f.translate(0, RT + 0.004, -0.2); fl.push(f); }
+  const head = new THREE.CylinderGeometry(0.0005, 0.0075, 0.04, 10); head.rotateX(-Math.PI / 2); head.translate(0, RT + 0.004, -0.635);
+  const charge = new THREE.CylinderGeometry(0.0085, 0.0085, 0.026, 12); charge.rotateX(Math.PI / 2); charge.translate(0, RT + 0.004, -0.603);
+  const glow = glowMat('#ff7a2a', 3.0);
+  arrow.add(mesh([shaft], M.black), mesh(fl, M.hull), mesh([head], M.stainless), mesh([charge], glow));
+  g.root.add(arrow);
+  g.arrow = arrow; g.glow = glow; g.muzzle = V(0, RT + 0.004, -0.66);
+  return g;
+}
+
 export function redDotMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { axis: { value: new THREE.Vector3(0, 0, -1) }, radius: { value: 0.0033 }, brightness: { value: 1 } },
@@ -682,5 +735,5 @@ export function redDotMaterial() {
 export function buildWeaponModels() {
   const M = gunMaterials();
   const dot = redDotMaterial();
-  return { ar: buildAR(M), sg: buildSG(M), mr: buildMR(M, dot), smg: buildSMG(M), lmg: buildLMG(M), rv: buildRV(M), materials: M, redDot: dot };
+  return { ar: buildAR(M), sg: buildSG(M), mr: buildMR(M, dot), smg: buildSMG(M), lmg: buildLMG(M), rv: buildRV(M), lance: buildLance(M, dot), hail: buildHail(M), materials: M, redDot: dot };
 }

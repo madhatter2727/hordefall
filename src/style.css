@@ -247,3 +247,10 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 #pwflash { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 55%, #fff 0%, #ffe2b0 35%, #ff6a2a 75%, #7a1004 100%); mix-blend-mode: screen; }
 #pwflash.on { animation: pwflash 1.3s ease-out forwards; }
 @keyframes pwflash { 0% { opacity: 0; } 6% { opacity: 1; } 25% { opacity: .75; } 100% { opacity: 0; } }
+/* M11: crate / forge prompts, rare + upgraded weapon names */
+#buyprompt b.rare { color: #6fe3ff; font-weight: 600; text-shadow: 0 0 10px rgba(111,227,255,.6); }
+#buyprompt b.up { color: #ff6af0; font-weight: 600; text-shadow: 0 0 10px rgba(255,106,240,.6); }
+#wname.up { color: #ff8af3; text-shadow: 0 0 12px rgba(255,80,230,.55); animation: upglow 2.4s ease-in-out infinite; }
+#wname.rare { color: #8beaff; text-shadow: 0 0 10px rgba(111,227,255,.45); }
+@keyframes upglow { 0%, 100% { color: #ff8af3; } 50% { color: #9af0ff; } }
+#banner.crate #banner-t { color: #6fe3ff; }

@@ -187,12 +187,13 @@ class Tracers {
     this.mesh = new THREE.InstancedMesh(g, this.mat, max);
     this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.renderOrder = 4;
     scene.add(this.mesh);
-    this.tmp = new THREE.Object3D();
+    this.tmp = new THREE.Object3D(); this.white = new THREE.Color(1, 1, 1);
+    for (let i = 0; i < max; i++) this.mesh.setColorAt(i, this.white);
   }
-  add(from, to, speed = 380, len = 7, width = 0.022) {
+  add(from, to, speed = 380, len = 7, width = 0.022, color = null) {
     if (this.items.length >= this.max) this.items.shift();
     const dir = to.clone().sub(from); const dist = dir.length(); dir.normalize();
-    this.items.push({ from: from.clone(), dir, dist, t: 0, speed, len, width });
+    this.items.push({ from: from.clone(), dir, dist, t: 0, speed, len, width, color: color ? new THREE.Color(color[0], color[1], color[2]) : null });
   }
   update(dt, camera) {
     this.items = this.items.filter((it) => (it.t += dt * it.speed) < it.dist + it.len);
@@ -211,10 +212,12 @@ class Tracers {
       o.scale.set(it.width * (1 + a.distanceTo(cam) * 0.02), L, 1);
       o.updateMatrix();
       this.mesh.setMatrixAt(i, o.matrix);
+      this.mesh.setColorAt(i, it.color || this.white);
       void b;
     });
     this.mesh.count = this.items.length;
     this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 }
 

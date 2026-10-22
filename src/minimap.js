@@ -7,7 +7,8 @@ const SPAN = 96;         // metres covered by the layout image (arena + streets 
 const RANGE = 26;        // metres from centre to rim
 
 export class Minimap {
-  constructor(el, colliders, wallbuys) {
+  constructor(el, colliders, wallbuys, stations) {
+    this.stations = stations;
     this.el = el; this.ctx = el.getContext('2d');
     const dpr = Math.min(2, devicePixelRatio || 1); this.dpr = dpr;
     this.size = 176; el.width = el.height = this.size * dpr; el.style.width = el.style.height = this.size + 'px';
@@ -68,6 +69,22 @@ export class Minimap {
       const [x, y] = toR(b.pos.x, b.pos.z);
       g.fillStyle = '#ffcf6a'; g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 1;
       g.beginPath(); g.rect(x - 3, y - 3, 6, 6); g.fill(); g.stroke();
+    }
+    // salvage crate ("?" box, cyan) + forge (anvil, magenta); pinned to the rim when out of range
+    if (this.stations) for (const ic of this.stations.icons()) {
+      let [x, y] = toR(ic.x, ic.z); const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+      if (d > R - 7) { x = cx + (dx / d) * (R - 7); y = cy + (dy / d) * (R - 7); }
+      g.save(); g.translate(x, y);
+      if (ic.kind === 'crate') {
+        const a = ic.moving ? 0.45 + 0.55 * Math.abs(Math.sin(this.t * 6)) : 1;
+        g.globalAlpha = a; g.fillStyle = '#0d2a33'; g.strokeStyle = '#6fe3ff'; g.lineWidth = 1.5;
+        g.beginPath(); g.rect(-5.5, -5.5, 11, 11); g.fill(); g.stroke();
+        g.fillStyle = '#6fe3ff'; g.font = '700 11px Teko, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('?', 0, 1);
+      } else {
+        g.globalAlpha = ic.on ? 1 : 0.6; g.fillStyle = '#ff6af0'; g.strokeStyle = 'rgba(0,0,0,.7)'; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(-6, -3); g.lineTo(6, -3); g.lineTo(3, 0); g.lineTo(3, 2); g.lineTo(5, 5); g.lineTo(-5, 5); g.lineTo(-3, 2); g.lineTo(-3, 0); g.closePath(); g.fill(); g.stroke();
+      }
+      g.restore();
     }
     // barrels
     for (const b of barrels.list) {

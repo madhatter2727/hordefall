@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WEAPONS, START_LOADOUT } from './defs.js';
+import { FORGE } from '../tuning.js';
 import { buildWeaponModels } from './models.js';
 import { Spring3, clamp, damp, lerp, rand, randSign, smooth, easeInOut } from '../core/util.js';
 
@@ -11,6 +12,8 @@ const POSES = {
   smg: { hip: new THREE.Vector3(0.1, -0.086, -0.3), hipRot: new THREE.Euler(0.0, 0.045, 0.03), ads: new THREE.Vector3(0, 0, -0.27) },
   lmg: { hip: new THREE.Vector3(0.118, -0.1, -0.33), hipRot: new THREE.Euler(0.0, 0.04, 0.02), ads: new THREE.Vector3(0, 0, -0.19) },
   rv: { hip: new THREE.Vector3(0.105, -0.1, -0.4), hipRot: new THREE.Euler(0.02, 0.07, 0.04), ads: new THREE.Vector3(0, 0, -0.42) },
+  lance: { hip: new THREE.Vector3(0.112, -0.094, -0.33), hipRot: new THREE.Euler(0.0, 0.035, 0.02), ads: new THREE.Vector3(0, 0, -0.245) },
+  hail: { hip: new THREE.Vector3(0.11, -0.09, -0.34), hipRot: new THREE.Euler(0.0, 0.04, 0.03), ads: new THREE.Vector3(0, 0, -0.17) },
 };
 
 function flashTexture() {
@@ -131,6 +134,14 @@ export class Arsenal {
       for (const k of ['reload', 'reloadEmpty', 'reloadStart', 'reloadShell', 'reloadEnd']) if (b[k]) d[k] = b[k] / this.mods.reload;
       d.mag = Math.round(b.mag * this.mods.mag); d.reserve = Math.round(b.reserve * this.mods.mag);
       d.explosive = this.mods.explosive;
+      if (w.up) { // THE FORGE: one upgrade tier
+        d.damage *= FORGE.damage; d.damageMin *= FORGE.damage; d.headMult *= FORGE.headMult; d.rpm *= FORGE.rof;
+        d.mag = Math.round(d.mag * FORGE.mag); d.reserve = Math.round(d.reserve * FORGE.reserve);
+        if (d.boom) d.boom = { ...d.boom, dmg: d.boom.dmg * FORGE.damage, radius: d.boom.radius * 1.15 };
+        if (d.zap) d.zap = { ...d.zap, dmg: d.zap.dmg * FORGE.damage };
+        d.name = FORGE.names[b.id] || b.name + ' MK II'; d.short = d.name.split(' ').slice(-1)[0]; d.upgraded = true;
+        d.tracerColor = [2.6, 0.5, 2.4];
+      }
       w.def = d;
     }
     this.hooks.onAmmo?.();
@@ -140,6 +151,7 @@ export class Arsenal {
   give(id) {
     const w = this.all[id]; if (!w) return null;
     if (this.weapons.includes(w)) { w.reserve = w.def.reserve; this.hooks.onAmmo?.(); return 'ammo'; }
+    if (w.up) { w.up = false; this.setMods({}); this.hooks.onDowngrade?.(w); } // a fresh copy isn't upgraded
     w.mag = w.def.mag; w.reserve = w.def.reserve;
     if (this.reload) this.resetReloadPose();
     this.reload = null; this.melee = null;
@@ -150,7 +162,7 @@ export class Arsenal {
   }
 
   select(i) {
-    if (i === this.index || this.swap || i < 0 || i >= this.weapons.length) return;
+    if (i === this.index || this.swap || i < 0 || i >= this.weapons.length || this.weapons[i].forging) return;
     if (this.reload) this.resetReloadPose();
     this.reload = null; this.melee = null;
     this.swap = { t: 0, to: i, switched: false };
@@ -292,6 +304,9 @@ export class Arsenal {
       this.redDot.uniforms.axis.value.copy(axis);
     }
 
+    // crossbow: the bolt rail is empty while it re-cocks and while the mag is out; energy coils flare per shot
+    if (model.arrow) { this.arrowT = Math.max(0, (this.arrowT || 0) - dt); model.arrow.visible = this.arrowT <= 0 && w.mag > 0 && !(this.reload && this.reload.t > 0.15 && this.reload.t < 0.6); }
+    if (model.glow) { this.glowKick = Math.max(0, (this.glowKick || 0) - dt * 4); model.glow.emissiveIntensity = (d.upgraded ? 4.5 : 3.0) + this.glowKick * 6 + Math.sin(this.time * 6) * 0.4; }
     // muzzle flash (decayed at the start of the frame so it always shows for >= 1 frame)
     this.flash.visible = this.flashT > 0;
     this.flashLight.intensity = Math.max(0, this.flashT / 0.05) * (d.id === 'sg' ? 1.3 : d.revolver ? 2.2 : 3.5);
@@ -347,7 +362,9 @@ export class Arsenal {
     this.root.updateMatrixWorld(true);
     const mw = m.muzzle.clone().applyMatrix4(m.root.matrixWorld);
     this.hooks.muzzleWorld?.(mw, d);
-    this.hooks.audio?.play('shot', { weapon: d });
+    this.hooks.audio?.play(d.energy ? 'lanceShot' : d.bolt ? 'boltShot' : 'shot', { weapon: d });
+    if (m.arrow) this.arrowT = 0.45;
+    if (m.glow) this.glowKick = 1;
     if (d.pump) { this.pumpT = 0; this.pumpBack = false; this.pumpFwd = false; }
     else if (d.revolver) { this.cylAngle = (this.cylAngle || 0) - Math.PI / 3; this.hammerT = 0.25; }
     else { this.ejectShell(false); }
@@ -388,7 +405,7 @@ export class Arsenal {
 
   resetReloadPose() {
     const m = this.current.model;
-    if (m.magHome) { m.mag.position.copy(m.magHome); m.mag.rotation.x = this.current.def.id === 'mr' ? 0.03 : 0; m.mag.visible = true; }
+    if (m.magHome) { m.mag.position.copy(m.magHome); m.mag.rotation.x = (this.current.def.id === 'mr' || this.current.def.id === 'lance') ? 0.03 : 0; m.mag.visible = true; }
     if (m.bolt) m.bolt.position.z = 0;
     m.leftHand.position.copy(m.leftHome); m.leftHand.rotation.set(0, 0, 0);
     if (m.shell) m.shell.visible = false;
@@ -412,7 +429,7 @@ export class Arsenal {
       const magKeys = [[0, 0, 0, 0], [0.13, 0, 0, 0], [0.17, 0, -0.012, 0.002], [0.3, 0, -0.24, 0.16], [0.38, 0, -0.3, 0.2], [0.53, 0, -0.05, 0.012], [0.6, 0, 0, 0]];
       const mo = track(magKeys, t, new THREE.Vector3());
       m.mag.position.copy(m.magHome).add(mo);
-      m.mag.rotation.x = (d.id === 'mr' ? 0.03 : 0) + track([[0, 0, 0, 0], [0.17, 0, 0, 0], [0.3, -0.7, 0, 0], [0.38, -0.55, 0, 0], [0.53, -0.1, 0, 0], [0.6, 0, 0, 0]], t).x;
+      m.mag.rotation.x = ((d.id === 'mr' || d.id === 'lance') ? 0.03 : 0) + track([[0, 0, 0, 0], [0.17, 0, 0, 0], [0.3, -0.7, 0, 0], [0.38, -0.55, 0, 0], [0.53, -0.1, 0, 0], [0.6, 0, 0, 0]], t).x;
       m.mag.visible = t < 0.3 || t >= 0.38;
       // left hand: grab the mag, strip it, fetch a new one, seat + slap, (empty) rack the charging handle
       const home = m.leftHome, grab = m.points.magBottom.clone().add(new THREE.Vector3(-0.016, 0.04, 0.004)).sub(home);
@@ -563,9 +580,28 @@ export class Arsenal {
     }
   }
 
+  // THE FORGE takes the gun out of your hands (you switch to another one) and hands it back upgraded
+  forgeTake(w) {
+    w.forging = true;
+    if (this.current !== w) return;
+    const i = this.weapons.findIndex((o) => !o.forging);
+    if (this.reload) this.resetReloadPose();
+    this.reload = null; this.melee = null;
+    if (i >= 0) this.swap = { t: 0, to: i, switched: false };
+  }
+  forgeReturn(w) {
+    w.forging = false; w.up = true;
+    this.setMods({});
+    if (!this.weapons.includes(w)) return;
+    w.mag = w.def.mag; w.reserve = w.def.reserve;
+    const i = this.weapons.indexOf(w);
+    if (i !== this.index) { if (this.reload) this.resetReloadPose(); this.reload = null; this.swap = { t: 0, to: i, switched: false }; }
+    this.hooks.onAmmo?.(); this.hooks.onSwap?.(w.def);
+  }
   refill() { for (const w of this.weapons) w.reserve = w.def.reserve; this.hooks.onAmmo?.(); }
   resetAll() {
     if (this.reload) this.resetReloadPose();
+    for (const w of Object.values(this.all)) { if (w.up) this.hooks.onDowngrade?.(w); w.up = false; w.forging = false; }
     this.setMods({ dmg: 1, rof: 1, reload: 1, mag: 1, head: 1, explosive: 0 });
     this.setLoadout(START_LOADOUT.filter((id) => this.all[id]));
     this.aimRecoil.pitch = this.aimRecoil.yaw = 0;

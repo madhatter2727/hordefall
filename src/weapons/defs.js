@@ -75,4 +75,31 @@ export const WEAPONS = [
     sound: { body: 1.45, crack: 1.5, thump: 72, tail: 1.9, pitch: 0.78 },
     tracerChance: 1, smoke: 1.2, shake: 0.14, flash: 1.3,
   },
+  // ---- rare crate-only guns (no wall-buy, not in the shop) ----
+  {
+    id: 'lance', name: 'NX-2 AURORA LANCE', short: 'AURORA', type: 'Energy rifle', slot: 7, crate: true, rare: true,
+    auto: false, rpm: 300, pellets: 1, energy: true,
+    damage: 150, damageMin: 135, falloffStart: 60, falloffEnd: 120, headMult: 1.8, limbMult: 0.9, pierce: 6,
+    zap: { radius: 2.2, dmg: 45 }, // every hit arcs into husks standing close by
+    mag: 18, reserve: 108, reload: 2.3, reloadEmpty: 2.8,
+    hipSpread: 1.2, adsSpread: 0.0, moveSpread: 1.0, bloomPerShot: 0.2, bloomMax: 0.8, bloomRecover: 6,
+    recoil: { up: 0.9, upRamp: 0, upMax: 0.9, side: 0.15, pattern: [0.05, -0.05], adsMult: 0.6, recover: 9 },
+    kick: { back: 0.07, up: 0.016, pitch: 0.12, yaw: 0.02, roll: 0.04, cam: 0.9 },
+    adsTime: 0.26, adsFov: 44, vmAdsFov: 36, weight: 1.3, sight: 'reddot',
+    sound: { body: 0.6, crack: 0.3, thump: 60, tail: 1.2, pitch: 1.2 },
+    tracerChance: 1, tracerColor: [0.25, 1.1, 2.6], smoke: 0, flash: 0.6, shake: 0.05,
+  },
+  {
+    id: 'hail', name: 'SKV-3 HAILSTRIKE', short: 'HAILSTRIKE', type: 'Explosive crossbow', slot: 8, crate: true, rare: true,
+    auto: false, rpm: 75, pellets: 1, bolt: true,
+    damage: 180, damageMin: 180, falloffStart: 80, falloffEnd: 120, headMult: 1.5, limbMult: 1, pierce: 0,
+    boom: { radius: 5, dmg: 300 }, // bolt goes off where it lands
+    mag: 5, reserve: 30, reload: 2.6, reloadEmpty: 2.9,
+    hipSpread: 1.8, adsSpread: 0.0, moveSpread: 1.5, bloomPerShot: 0.4, bloomMax: 1.2, bloomRecover: 4,
+    recoil: { up: 1.5, upRamp: 0, upMax: 1.5, side: 0.3, pattern: [0.1, -0.1], adsMult: 0.7, recover: 6 },
+    kick: { back: 0.1, up: 0.03, pitch: 0.25, yaw: 0.04, roll: 0.07, cam: 1.4 },
+    adsTime: 0.24, adsFov: 50, vmAdsFov: 40, weight: 1.35, sight: 'iron', adsNear: 0.12,
+    sound: { body: 0.55, crack: 0.25, thump: 95, tail: 0.5, pitch: 1.4 },
+    tracerChance: 1, tracerColor: [1.2, 0.8, 0.4], smoke: 0.2, flash: 0.15, shake: 0.06,
+  },
 ];

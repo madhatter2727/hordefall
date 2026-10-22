@@ -79,3 +79,43 @@ export const STUCK = { sidestep: 2, nudge: 3, vault: 4, relocate: 7, relocateBos
 
 // points for every hit on the Colossus (weak points: glowing head + back core; armor: everywhere else)
 export const BOSS_HIT = { weak: 20, armor: 5 };
+
+// ============================================================================
+// M11 — Mystery weapon crate ("SALVAGE CRATE")
+//   cost       points per spin
+//   spin       seconds the roulette of floating guns spins before it lands
+//   hold       seconds the winning gun floats in the open crate before it sinks back in
+//   pool       weight of each gun in the roulette (rare ones can't be bought anywhere else)
+//   jam        chance per spin (after `jamAfter` spins at the same spot) that the crate seizes up:
+//              you get your points back, it hauls itself away to another spot and a sign marks where it went
+//   moveTime   seconds before it shows up at its new spot
+//   spots      where it can sit (x, z, facing)
+// ============================================================================
+export const CRATE = {
+  cost: 950, spin: 4.2, hold: 10, jam: 0.18, jamAfter: 3, moveTime: 6,
+  pool: { sg: 12, smg: 12, mr: 11, lmg: 10, rv: 10, ar: 8, lance: 5, hail: 5 },
+  spots: [
+    { x: -14, z: 3, ry: Math.PI / 2 },
+    { x: 16, z: -26, ry: 0 },
+    { x: -8, z: 24, ry: Math.PI },
+    { x: 26, z: -6, ry: -Math.PI / 2 },
+  ],
+};
+
+// ============================================================================
+// M11 — Weapon upgrade machine ("THE FORGE")
+//   cost       points per upgrade; unlockWave = the wave it powers up on (before that you can still
+//              force it open for `earlyCost`)
+//   time       seconds the gun spends inside (it comes out on its own, then you take it)
+//   damage / mag / reserve   multipliers for the upgraded gun; one tier per gun
+//   names      new names for upgraded guns
+// ============================================================================
+export const FORGE = {
+  cost: 3000, earlyCost: 5000, unlockWave: 6, time: 3.4,
+  x: -20, z: -20, ry: Math.PI / 4,
+  damage: 2.0, mag: 1.5, reserve: 2.0, rof: 1.1, headMult: 1.15,
+  names: {
+    ar: 'AR-7 SUPERNOVA', sg: 'KS-12 WRECKING BALL', mr: 'MR-30 HEARTSEEKER', smg: 'VX-9 KILLER BEES', lmg: 'HX-60 IRON CURTAIN',
+    rv: 'R-44 JUDGEMENT', lance: 'NX-2 DAYBREAK LANCE', hail: 'SKV-3 FIRESTORM',
+  },
+};

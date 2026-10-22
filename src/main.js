@@ -4,6 +4,7 @@ import { Input } from './core/input.js';
 import { clamp, lerp, damp, rand, rayAABB } from './core/util.js';
 import { buildArena } from './world/arena.js';
 import { WallBuys } from './world/wallbuys.js';
+import { Stations } from './world/stations.js';
 import { Barrels } from './world/barrels.js';
 import { makeSky, SUN_DIR } from './world/sky.js';
 import { Player } from './player.js';
@@ -19,7 +20,7 @@ import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
 import { PowerUps, POWER_TYPES, powerIconURL } from './powerups.js';
-import { POWERUPS, FEEDBACK, BOSS_HIT } from './tuning.js';
+import { POWERUPS, FEEDBACK, BOSS_HIT, CRATE, FORGE } from './tuning.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -98,6 +99,19 @@ class Game {
       onFire: (def) => { this.crossKick = 1; this.shake(def.shake ?? (def.id === 'sg' ? 0.16 : def.id === 'mr' ? 0.11 : 0.025)); this.horde.alert(this.player.pos, def.id === 'mr' ? 42 : 34); },
       onAmmo: () => (this.hudDirty = true),
       onSwap: () => (this.hudDirty = true),
+      onDowngrade: (w) => this.stations?.removeCamo(w.model.root),
+    });
+    // M11: salvage crate + forge (solid props: their colliders go in before the nav grids are built)
+    this.stations = new Stations(scene, this.arena.colliders, this.arsenal, {
+      audio: this.audio,
+      wave: () => this.horde?.wave || 0,
+      spend: (n) => { if (this.pts < n) { this.audio.play('dry'); return false; } this.pts -= n; this.hudDirty = true; return true; },
+      refund: (n) => { this.pts += n; this.hudDirty = true; },
+      give: (id) => { const r = this.arsenal.give(id); const d = this.arsenal.all[id].def; this.feed(`<b>${d.name}</b>${d.rare ? ' · RARE' : ''}`, 0); return r; },
+      banner: (t, sub, cls) => this.banner(t, sub, cls),
+      spark: (p, col, n) => this.spark(p, col, n),
+      smoke: (p) => this.fx.alpha.spawn({ pos: p.clone(), vel: new THREE.Vector3(rand(-0.2, 0.2), rand(0.8, 1.4), rand(-0.2, 0.2)), life: rand(1.4, 2.4), size: rand(0.12, 0.2), grow: 0.8, col: new THREE.Color(0.3, 0.29, 0.3), alpha: 0.3, drag: 1.2, grav: -0.2 }),
+      upgraded: (w) => { this.announce('WEAPON UPGRADED', w.def.name, '#ff6af0'); this.shake(0.15); this.hudDirty = true; },
     });
 
     this.blade = new MacheteVM(this.vmCamera, this.arsenal.models.materials);
@@ -125,7 +139,7 @@ class Game {
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.powerups = new PowerUps(scene, { groundAt: (x, z, y) => this.horde.groundAt(x, z, y), audio: this.audio, walkable: (p) => this.walkableNear(p) });
     this.power = { bounty: 0, reaper: 0 }; this.slowT = 0;
-    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys);
+    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys, this.stations);
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
 
@@ -164,7 +178,12 @@ class Game {
     const dn = $('dmgnums'); dn.checked = this.dmgNumsOn; dn.onchange = () => { this.dmgNumsOn = dn.checked; localStorage.setItem('hf-dn', dn.checked ? '1' : '0'); };
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyP' && this.state === 'play') document.exitPointerLock();
-      if (e.code === 'KeyF' && this.state === 'play' && this.wallTarget) this.buy('gun:' + this.wallTarget.id);
+      if (e.code === 'KeyF' && this.state === 'play') {
+        const st = this.stationTarget;
+        if (st?.kind === 'crate') this.stations.useCrate();
+        else if (st?.kind === 'forge') this.stations.useForge();
+        else if (this.wallTarget) this.buy('gun:' + this.wallTarget.id);
+      }
       if (this.state === 'shop') {
         const k = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
         if (k >= 0) this.pickPerk(k);
@@ -207,7 +226,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
+    this.perks = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -222,7 +241,7 @@ class Game {
   }
   banner(title, sub, cls = '') {
     const b = $('banner'); $('banner-t').textContent = title; $('banner-s').textContent = sub;
-    b.classList.remove('on', 'boss'); void b.offsetWidth; b.classList.add('on'); if (cls) b.classList.add(cls);
+    b.classList.remove('on', 'boss', 'crate'); void b.offsetWidth; b.classList.add('on'); if (cls) b.classList.add(cls);
     if (title.startsWith('WAVE') && !title.includes('CLEARED')) this.audio.play('waveStart');
   }
   shake(a) { this.trauma = Math.min(1, this.trauma + a); }
@@ -339,14 +358,30 @@ class Game {
   updateWallPrompt() {
     const el = $('buyprompt');
     const b = this.state === 'play' ? this.wallbuys.nearest(this.player.pos, this.camera.getWorldDirection(this._wbDir || (this._wbDir = new THREE.Vector3()))) : null;
-    this.wallTarget = b;
+    const st = this.state === 'play' && !b ? this.stations.target(this.player.pos, this._wbDir) : null;
+    this.wallTarget = b; this.stationTarget = st;
     let html = '';
+    const price = (n) => `<span class="${this.pts >= n ? 'ok' : 'no'}">${n.toLocaleString()}</span>`;
+    if (st?.kind === 'crate') {
+      const A = this.arsenal, full = A.weapons.length >= 3;
+      if (st.state === 'idle') html = `<kbd>F</kbd> SALVAGE CRATE · RANDOM WEAPON ${price(CRATE.cost)}`;
+      else if (st.state === 'offer') { const d = A.all[st.id].def; html = `<kbd>F</kbd> TAKE ${d.rare ? '<b class="rare">' + d.name + '</b>' : d.name}${full ? ` <i>(swaps ${A.current.def.short})</i>` : ''}`; }
+      else if (st.state === 'spin') html = `<i>SPINNING…</i>`;
+    } else if (st?.kind === 'forge') {
+      const A = this.arsenal, w = A.current, S = this.stations, cost = S.forgeCost();
+      if (st.state === 'idle') {
+        if (A.bladeOut || !w) html = `<i>THE FORGE · hold a gun to upgrade it</i>`;
+        else if (w.up) html = `<i>${w.def.name} · ALREADY UPGRADED</i>`;
+        else html = `<kbd>F</kbd> FORGE ${w.def.short} → ${FORGE.names[w.base.id] || w.def.name + ' MK II'} ${price(cost)}${this.horde.wave < FORGE.unlockWave ? ` <i>(${FORGE.cost.toLocaleString()} from wave ${FORGE.unlockWave})</i>` : ''}`;
+      } else if (st.state === 'ready') html = `<kbd>F</kbd> TAKE <b class="up">${FORGE.names[S.forge.w.base.id] || S.forge.w.base.name + ' MK II'}</b>`;
+      else html = `<i>FORGING…</i>`;
+    }
     if (b) {
       const owned = this.arsenal.owns(b.id), cost = owned ? Math.round(b.def.cost / 2) : b.def.cost;
       const what = owned ? `${b.def.short} AMMO` : this.arsenal.weapons.length >= 3 ? `${b.def.name} <i>(swaps ${this.arsenal.current.def.short})</i>` : b.def.name;
       html = `<kbd>F</kbd> BUY ${what} <span class="${this.pts >= cost ? 'ok' : 'no'}">${cost.toLocaleString()}</span>`;
     }
-    if (el.innerHTML !== html) { el.innerHTML = html; el.classList.toggle('on', !!b); }
+    if (el.innerHTML !== html) { el.innerHTML = html; el.classList.toggle('on', !!html); }
   }
   readyUp() {
     if (this.state !== 'shop') return;
@@ -391,6 +426,15 @@ class Game {
       hitAny = true;
       if (pierce-- <= 0) { endT = h.t; break; }
     }
+    // rare guns: the HAILSTRIKE bolt blows up where it lands; the AURORA LANCE arcs into husks near each hit
+    if (def.boom && first !== null) {
+      const at = origin.clone().addScaledVector(dir, Math.max(0.5, (hitAny ? Math.min(endT, hits[0].t) : wallT) - 0.15));
+      if (endT < 300 || wh) this.explode(at, 0.75, { radius: def.boom.radius, dmg: def.boom.dmg, noSelf: at.distanceTo(origin) > 3 });
+    }
+    if (def.zap && hitAny) {
+      for (const h of hits) { if (h.t > endT + 0.01) break; this.zapArc(h.point, def); }
+    }
+    if (def.energy && endT === wallT && wh) this.spark(origin.clone().addScaledVector(dir, wallT), 0x58d6ff, 10);
     if (hitAny && def.explosive && first !== null && !this.boomThisShot && Math.random() < 0.1 * def.explosive) {
       this.boomThisShot = true; this.explode(origin.clone().addScaledVector(dir, Math.min(endT, hits[0].t)), 0.42, { noSelf: true, dmg: 75, radius: 2.8 });
     }
@@ -409,8 +453,24 @@ class Game {
       const end = origin.clone().addScaledVector(dir, Math.min(endT, 250));
       // begin a bit ahead of the muzzle so it doesn't cover the sights
       const from = this.muzzleNow.clone().addScaledVector(dir, 1.2);
-      if (end.distanceTo(from) > 2) this.fx.tracers.add(from, end, def.id === 'mr' ? 520 : 400, def.id === 'mr' ? 10 : 6, def.id === 'mr' ? 0.03 : 0.02);
+      const heavy = def.id === 'mr' || def.energy;
+      if (end.distanceTo(from) > 2) this.fx.tracers.add(from, end, def.bolt ? 140 : heavy ? 520 : 400, def.energy ? 40 : def.bolt ? 1.2 : heavy ? 10 : 6, def.energy ? 0.07 : def.bolt ? 0.04 : heavy ? 0.03 : 0.02, def.tracerColor);
     }
+  }
+  spark(p, col, n = 8) {
+    const c = new THREE.Color(col).multiplyScalar(4);
+    for (let i = 0; i < n; i++) this.fx.add.spawn({ pos: p.clone(), vel: new THREE.Vector3(rand(-3, 3), rand(0.5, 5), rand(-3, 3)), life: rand(0.15, 0.45), size: rand(0.012, 0.028), col: c, grav: 12, drag: 2, kind: 1 });
+  }
+  // AURORA LANCE: a short arc of energy from the hit to husks standing close by
+  zapArc(p, def) {
+    this.spark(p, 0x58d6ff, 8);
+    const Z = def.zap, near = this.horde.enemies.filter((e) => !e.dead && e.pos.distanceTo(p) < Z.radius + 0.6).slice(0, 3);
+    for (const e of near) {
+      const to = e.joints?.[1] || e.pos;
+      if (to.distanceTo(p) < 0.5) continue;
+      this.fx.tracers.add(p, to.clone(), 260, 3, 0.03, [0.4, 1.4, 3]);
+    }
+    this.horde.blast(p, Z.radius, Z.dmg);
   }
   // blood thrown past the target lands on the nearest wall behind it and on the ground
   splatter(point, dir, def, heavy) {
@@ -807,6 +867,7 @@ class Game {
       this.throwables.update(worldDt, this.time);
       if (this.state === 'play') this.updatePowers(dt);
       this.wallbuys.update(this.time);
+      this.stations.update(worldDt, this.time);
       this.updateWallPrompt();
       this.fx.update(worldDt, this.camera, this.time);
     }
@@ -875,7 +936,8 @@ class Game {
     if (this.hudDirty) {
       this.hudDirty = false;
       const bl = this.blade.drawn;
-      $('wname').textContent = bl ? MACHETE.name : w.def.name; $('wtype').textContent = bl ? MACHETE.type : w.def.type;
+      $('wname').textContent = bl ? MACHETE.name : w.def.name; $('wtype').textContent = bl ? MACHETE.type : w.def.upgraded ? w.def.type + ' · FORGED' : w.def.rare ? w.def.type + ' · RARE' : w.def.type;
+      $('wname').classList.toggle('up', !bl && !!w.def.upgraded); $('wname').classList.toggle('rare', !bl && !w.def.upgraded && !!w.def.rare);
       $('mag').classList.toggle('low', !bl && w.mag <= Math.ceil(w.def.mag * 0.25));
       $('score').textContent = this.score.toLocaleString();
       $('kills').textContent = this.kills;
@@ -949,5 +1011,7 @@ window.__debug = {
   quality(q) { game.applyQuality(q); },
   power(type, x, z) { const p = game.player.pos; return !!game.powerups.spawn(type, x ?? p.x, z ?? p.z - 3, p.y); },
   slowmo() { game.slowT = FEEDBACK.slowmo.dur; },
+  crate() { const C = game.stations.crate; return { at: C.at, state: C.state, t: +C.t.toFixed(2), result: C.result, next: C.next, spins: C.spins }; },
+  forge() { const F = game.stations.forge; return { state: F.state, t: +F.t.toFixed(2), gun: F.w?.base.id || null }; },
   frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },
 };
