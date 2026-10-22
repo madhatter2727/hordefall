@@ -308,8 +308,8 @@ export class Horde {
     const pc = nav.cellOf(P.pos.x, P.pos.z);
     if (!this.playerF || (pc !== this.playerF.cell && this.flowT < 0.4) || this.flowT <= 0) { // at most ~5 rebuilds/s
       const t0 = performance.now();
-      this.playerF = nav.build(P.pos.x, P.pos.z, P.pos.y, 'player'); this.flowT = 0.6;
-      this.navStats.builds++; this.navStats.buildMs = performance.now() - t0;
+      this.playerF = nav.build(P.pos.x, P.pos.z, P.pos.y, "player");
+      this.navStats.builds++; this.navStats.buildMs = performance.now() - t0; this.flowT = 2;
     }
     const L = this.lures[0];
     if (L) { const lc = nav.cellOf(L.pos.x, L.pos.z); if (!this.lureF || this.lureF.cell !== lc) this.lureF = nav.build(L.pos.x, L.pos.z, L.pos.y, 'lure'); }
