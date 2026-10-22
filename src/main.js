@@ -497,12 +497,12 @@ class Game {
         if (res.killed && Math.random() < (kind === 'lunge' ? 0.7 : 0.4)) { this.horde.sever(e, 1, dir); this.feed('<b>DECAPITATED</b>', 25); this.addScore(25); }
       }
       if (!e.type.hue) { this.splatsThisShot = 0; this.splatter(h.point, dir, def, true); }
-      this.fx.bloodHit(h.point, dir, true); this.fx.bloodMist(h.point, dir, 1.8); this.fx.artery(h.point, dir, 1.2);
+      this.fx.bloodHit(h.point, dir, true); this.fx.bloodMist(h.point, dir, 0.7);
       if (res.killed) this.killFx(h, dir, { id: 'melee' }, res);
       this.onHit({ ...h, part: 'body' }, dmg, res);
     });
     if (kills >= 2) { this.feed(`<b>CLEAVE ×${kills}</b>`, 75 * kills); this.addScore(75 * kills); }
-    this.screenBlood = Math.min(this.screenBlood || 0, 0.55); // gore on the lens, but you can still see
+    this.screenBlood = Math.min(this.screenBlood || 0, 0.3); // gore on the lens, but you can still see
     this.audio.play('axeHit', { n: hits.length });
     this.shake(0.3 + 0.08 * hits.length); this.hitstop = Math.max(this.hitstop, 0.085 + 0.02 * hits.length);
     this.arsenal.camKick.impulse(kind === 'lunge' ? -6 : -2, sweep * 6, sweep * 8);
