@@ -36,7 +36,7 @@ with sync_playwright() as p:
     R['jam next (underpass open)'] = jams(6)
     ev("game.stations.reset()")
     # forge (wave 6 price) on the gun in hand
-    ev("game.horde.wave = 6; __debug.select(0)"); f = ev("(() => { const F = game.stations.forge; return { p: F.pos.toArray(), n: F.normal.toArray() }; })()")
+    ev("game.horde.wave = 6; __debug.select(0)"); gt(1.2); f = ev("(() => { const F = game.stations.forge; return { p: F.pos.toArray(), n: F.normal.toArray() }; })()")
     front(f['p'], f['n'], 1.7); R['forge prompt'] = prompt(); p0 = ev("game.pts"); F(); gt(0.2); R['forge paid'] = p0 - ev("game.pts")
     ev("game.stations.forge.t = 3.3"); t = 0
     while ev("__debug.forge().state") != 'ready' and t < 12: gt(0.25); t += 0.25
