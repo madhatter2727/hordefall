@@ -83,7 +83,8 @@ export class Areas {
       const xa = -20.7 - 0.6 * k, xb = xa + 0.6, h = 0.4 * k;
       this.col(xa, xb, 0, h, zs0, zs1, { walk: true });
       this.box(0.6, 0.06, zw, (xa + xb) / 2, h - 0.03, zc, this.mat.steel, null, false);
-      this.box(0.05, 0.34, zw, xb - 0.03, h - 0.23, zc, this.mat.yellow, null, false); // hazard nosing
+      this.box(0.03, 0.4, zw - 0.1, xb - 0.02, h - 0.2, zc, this.mat.dark, null, false); // riser
+      this.box(0.07, 0.035, zw, xb - 0.035, h - 0.017, zc, this.mat.yellow, null, false); // hazard nosing
     }
     const len = 5.3, xm = -25.5 + len / 2;
     for (const zz of [zs0 - 0.1, zs1 + 0.1]) {
@@ -136,10 +137,13 @@ export class Areas {
     this.box(0.4, Hh, z1 - z0, 36.2, Hh / 2, (z0 + z1) / 2, this.mat.brick, { mat: 'concrete' });
     this.box(x1 - x0, Hh, 0.4, (x0 + x1) / 2, Hh / 2, 36.2, this.mat.brick, { mat: 'concrete' });
     this.box(x1 - x0, 0.4, z1 - z0, (x0 + x1) / 2, 4.1, (z0 + z1) / 2, this.mat.dark, { mat: 'concrete', minY: 3.9 });
-    const ti = this.mat.tile.clone(); ti.map = this.mat.tile.map.clone(); ti.map.repeat.set(4, 1.6); ti.map.needsUpdate = true;
+    const ti = this.mat.tile.clone(); ti.map = this.mat.tile.map.clone(); ti.map.repeat.set(7, 3.2); ti.map.needsUpdate = true;
     const wall = (w, x, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 3.9), ti); m.position.set(x, 1.95, z); m.rotation.y = ry; m.receiveShadow = true; this.group.add(m); };
     wall(36 - x0, (x0 + 36) / 2, 35.95, Math.PI); wall(36 - z0, 35.95, (z0 + 36) / 2, -Math.PI / 2); wall(36 - z0, x0 + 0.21, (z0 + 36) / 2, Math.PI / 2);
     wall(sx0 - x0, (x0 + sx0) / 2, z0 + 0.21, 0); wall(36 - sx1, (sx1 + 36) / 2, z0 + 0.21, 0);
+    const band = std({ color: '#2f5b4a', roughness: 0.5 }); // painted band round the concourse at head height
+    this.box(36 - x0 - 0.4, 0.22, 0.02, (x0 + 36) / 2, 2.3, 35.93, band, null, false); this.box(0.02, 0.22, 36 - z0 - 0.4, 35.93, 2.3, (z0 + 36) / 2, band, null, false);
+    this.box(0.02, 0.22, 36 - z0 - 0.4, x0 + 0.22, 2.3, (z0 + 36) / 2, band, null, false);
     const fl = new THREE.Mesh(new THREE.PlaneGeometry(36 - x0, 36 - z0), this.mat.floor); fl.rotation.x = -Math.PI / 2; fl.position.set((x0 + 36) / 2, 0.012, (z0 + 36) / 2); fl.receiveShadow = true; this.group.add(fl);
     // yellow platform-edge strip + a stairwell down to the trains (spawn point at its top)
     this.box(36 - x0 - 0.4, 0.02, 0.35, (x0 + 36) / 2 + 0.2, 0.03, 35.5, this.mat.yellow, null, false);
@@ -161,8 +165,10 @@ export class Areas {
     }
     // roll-up shutter + motor drum above the doorway (outside face)
     const SW = sx1 - sx0, sm = std({ ...corrugated({ color: [138, 140, 136], seed: 33 }), metalness: 0.6 });
-    sm.map.repeat.set(1, 1); sm.map.rotation = Math.PI / 2; sm.map.center.set(0.5, 0.5);
-    const shutter = new THREE.Mesh(new THREE.BoxGeometry(SW - 0.1, sh, 0.08), sm); shutter.geometry.translate(0, -sh / 2, 0); shutter.position.set(b.x, sh, z0 - 0.22); shutter.castShadow = true; this.group.add(shutter);
+    for (const k of ['map', 'normalMap', 'roughnessMap']) { sm[k] = sm[k].clone(); sm[k].wrapS = sm[k].wrapT = THREE.RepeatWrapping; sm[k].repeat.set(3.2, 1); sm[k].needsUpdate = true; }
+    const sg = new THREE.BoxGeometry(SW - 0.1, sh, 0.08), uv = sg.attributes.uv; // swap u/v so the ribs run sideways (roll-up slats)
+    for (let i = 0; i < uv.count; i++) { const u = uv.getX(i); uv.setX(i, uv.getY(i)); uv.setY(i, u); }
+    const shutter = new THREE.Mesh(sg, sm); shutter.geometry.translate(0, -sh / 2, 0); shutter.position.set(b.x, sh, z0 - 0.22); shutter.castShadow = true; this.group.add(shutter);
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, SW + 0.2, 14), this.mat.steel); drum.rotation.z = Math.PI / 2; drum.position.set(b.x, sh + 0.2, z0 - 0.5); this.group.add(drum);
     for (const gx of [sx0 + 0.05, sx1 - 0.05]) this.box(0.12, sh, 0.12, gx, sh / 2, z0 - 0.3, this.mat.dark);
     const hz = new THREE.Mesh(new THREE.PlaneGeometry(SW, 0.25), std({ color: '#c99a1e' })); hz.position.set(b.x, 0.14, z0 - 0.27); hz.rotation.y = Math.PI; this.group.add(hz);
