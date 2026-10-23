@@ -324,6 +324,7 @@ export class Horde {
   // a door opened (or the run restarted): re-read the layout for both grids and drop every cached field
   rebuildNav() {
     const t0 = performance.now();
+    this.colliders = this.arena.colliders.filter((c) => !c.ground); for (const e of this.enemies) e.near = null; // physics copy too
     this.nav.bake(this.arena.colliders); this.navBig.bake(this.arena.colliders);
     this.playerF = null; this.playerFBig = null; this.lureF = null; this.flowT = 0;
     this.navStats.rebakeMs = performance.now() - t0;
