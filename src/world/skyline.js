@@ -171,14 +171,15 @@ const colored = (g, c) => { g = g.index ? g.toNonIndexed() : g; if (!g.attribute
 
 // ------------------------------------------------------------------ shared shader patch: haze, desaturation, glass reflection
 const HAZE = new THREE.Color().setRGB(0.4, 0.31, 0.36, THREE.LinearSRGBColorSpace);
+export const SKY_NIGHT = { value: 0 }; // M13 nightfall: 0 dusk haze … 1 night haze (shared by every skyline material)
 function skyPatch(mat, refl = 0) {
   mat.fog = false;
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uSun = { value: SUN_DIR }; sh.uniforms.uHaze = { value: HAZE }; sh.uniforms.uRefl = { value: refl };
+    sh.uniforms.uSun = { value: SUN_DIR }; sh.uniforms.uHaze = { value: HAZE }; sh.uniforms.uRefl = { value: refl }; sh.uniforms.uNight = SKY_NIGHT;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSkyW;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSkyW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec3 vSkyW; uniform vec3 uSun, uHaze; uniform float uRefl;
+      varying vec3 vSkyW; uniform vec3 uSun, uHaze; uniform float uRefl, uNight;
       float skH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       vec3 skyC(vec3 d){ float h = d.y;
         vec3 c = mix(vec3(1.25, 0.58, 0.32), vec3(0.42, 0.28, 0.38), smoothstep(0.0, 0.22, h));
@@ -209,11 +210,11 @@ function skyPatch(mat, refl = 0) {
             vec3 R = reflect(vd, nW);
             float F = 0.3 + 0.7 * pow(1.0 - max(dot(-vd, nW), 0.0), 4.0);
             float sr = max(dot(R, uSun), 0.0);
-            col = mix(col, skyC(R) * 0.85 + vec3(1.5, 0.62, 0.26) * pow(sr, 2.5) * 0.7 * uRefl, zGlass * uRefl * F);
+            col = mix(col, (skyC(R) * 0.85 + vec3(1.5, 0.62, 0.26) * pow(sr, 2.5) * 0.7 * uRefl) * mix(1.0, 0.1, uNight), zGlass * uRefl * F);
           }
           // aerial perspective: fade + desaturate with distance, a little less up high, warmer toward the sun
           float sd = max(dot(vd, uSun), 0.0);
-          vec3 hz = uHaze + vec3(1.1, 0.5, 0.25) * pow(sd, 4.0) * 0.55;
+          vec3 hz = mix(uHaze + vec3(1.1, 0.5, 0.25) * pow(sd, 4.0) * 0.55, vec3(0.03, 0.036, 0.07), uNight);
           float f = 1.0 - exp(-max(dist - 30.0, 0.0) * 0.0068);
           f *= mix(1.0, 0.72, smoothstep(10.0, 110.0, vSkyW.y));
           float l = dot(col, vec3(0.3, 0.59, 0.11));

@@ -24,8 +24,8 @@ with sync_playwright() as p:
     if 'doors' in sec:
         wave(1)
         go(-16.9, 0.05, -30.4, 1.5, 0.16); R['prompt roof'] = prompt(); shot('m13-door-locked')
-        F(); gt(2.6); go(-14.8, 0.05, -27.0, 1.12, 0.22); shot('m13-door-opened'); R['doors'] = ev("__debug.doors()")
-        go(30.2, 0.05, 23.9, 2.95, 0.2); R['prompt under'] = prompt(); shot('m13-door-locked-2'); F(); gt(2.4)
+        F(); gt(2.6); go(-14.6, 0.05, -30.0, 1.5708, 0.2); shot('m13-door-opened'); R['doors'] = ev("__debug.doors()")
+        go(31.0, 0.05, 23.2, 3.1416, 0.2); R['prompt under'] = prompt(); shot('m13-door-locked-2'); F(); gt(2.4)
         ev("__debug.crateTo(4)")
         go(27.0, 0.05, 28.0, -2.35, 0.06); shot('m13-new-area')
         go(-26.3, 3.25, -29.6, 1.14, -0.04); shot('m13-new-area-roof')
@@ -35,8 +35,8 @@ with sync_playwright() as p:
         ev("game.horde.reset()")
         for w, name in [(6, 'm13-dusk'), (12, 'm13-night')]:
             ev("game.horde.reset()"); wave(w)
-            go(6, 0.05, 9, 0.55, 0.06)
-            ev("__debug.spawn(6, 9, true, 'runner', game.player.yaw + Math.PI)")
+            go(14, 0.05, 5, 0.42, 0.05)
+            ev("__debug.spawn(5, 8, true, 'runner', game.player.yaw + Math.PI)")
             gt(1.2); R[name] = ev("__debug.night()"); shot(name)
     for k, v in R.items(): print(k, json.dumps(v))
     print('ERRORS', len(errs)); [print('  ', e[:300]) for e in errs[:10]]

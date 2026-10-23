@@ -134,26 +134,27 @@ export class Areas {
     this.box(sx0 - x0, Hh, 0.4, (x0 + sx0) / 2, Hh / 2, z0, this.mat.brick, { mat: 'concrete' });
     this.box(x1 - sx1, Hh, 0.4, (sx1 + x1) / 2, Hh / 2, z0, this.mat.brick, { mat: 'concrete' });
     this.box(sx1 - sx0, Hh - sh, 0.4, (sx0 + sx1) / 2, sh + (Hh - sh) / 2, z0, this.mat.brick, { mat: 'concrete' });
-    this.box(0.4, Hh, z1 - z0, 36.2, Hh / 2, (z0 + z1) / 2, this.mat.brick, { mat: 'concrete' });
-    this.box(x1 - x0, Hh, 0.4, (x0 + x1) / 2, Hh / 2, 36.2, this.mat.brick, { mat: 'concrete' });
+    this.box(0.4, Hh, z1 - z0, 35.7, Hh / 2, (z0 + z1) / 2, this.mat.brick, { mat: 'concrete' });
+    this.box(x1 - x0, Hh, 0.4, (x0 + x1) / 2, Hh / 2, 35.7, this.mat.brick, { mat: 'concrete' });
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(35.5 - x0, 35.5 - z0), std({ color: '#55575a', emissive: '#23262a', roughness: 0.9 })); ceil.rotation.x = Math.PI / 2; ceil.position.set((x0 + 35.5) / 2, 3.89, (z0 + 35.5) / 2); this.group.add(ceil);
     this.box(x1 - x0, 0.4, z1 - z0, (x0 + x1) / 2, 4.1, (z0 + z1) / 2, this.mat.dark, { mat: 'concrete', minY: 3.9 });
     const ti = this.mat.tile.clone(); ti.map = this.mat.tile.map.clone(); ti.map.repeat.set(7, 3.2); ti.map.needsUpdate = true;
     const wall = (w, x, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 3.9), ti); m.position.set(x, 1.95, z); m.rotation.y = ry; m.receiveShadow = true; this.group.add(m); };
-    wall(36 - x0, (x0 + 36) / 2, 35.95, Math.PI); wall(36 - z0, 35.95, (z0 + 36) / 2, -Math.PI / 2); wall(36 - z0, x0 + 0.21, (z0 + 36) / 2, Math.PI / 2);
-    wall(sx0 - x0, (x0 + sx0) / 2, z0 + 0.21, 0); wall(36 - sx1, (sx1 + 36) / 2, z0 + 0.21, 0);
+    wall(35.5 - x0, (x0 + 35.5) / 2, 35.48, Math.PI); wall(35.5 - z0, 35.48, (z0 + 35.5) / 2, -Math.PI / 2); wall(35.5 - z0, x0 + 0.21, (z0 + 35.5) / 2, Math.PI / 2);
+    wall(sx0 - x0, (x0 + sx0) / 2, z0 + 0.21, 0); wall(35.5 - sx1, (sx1 + 35.5) / 2, z0 + 0.21, 0);
     const band = std({ color: '#2f5b4a', roughness: 0.5 }); // painted band round the concourse at head height
-    this.box(36 - x0 - 0.4, 0.22, 0.02, (x0 + 36) / 2, 2.3, 35.93, band, null, false); this.box(0.02, 0.22, 36 - z0 - 0.4, 35.93, 2.3, (z0 + 36) / 2, band, null, false);
-    this.box(0.02, 0.22, 36 - z0 - 0.4, x0 + 0.22, 2.3, (z0 + 36) / 2, band, null, false);
-    const fl = new THREE.Mesh(new THREE.PlaneGeometry(36 - x0, 36 - z0), this.mat.floor); fl.rotation.x = -Math.PI / 2; fl.position.set((x0 + 36) / 2, 0.012, (z0 + 36) / 2); fl.receiveShadow = true; this.group.add(fl);
+    this.box(35.5 - x0 - 0.4, 0.22, 0.02, (x0 + 35.5) / 2, 2.3, 35.46, band, null, false); this.box(0.02, 0.22, 35.5 - z0 - 0.4, 35.46, 2.3, (z0 + 35.5) / 2, band, null, false);
+    this.box(0.02, 0.22, 35.5 - z0 - 0.4, x0 + 0.22, 2.3, (z0 + 35.5) / 2, band, null, false);
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(35.5 - x0, 35.5 - z0), this.mat.floor); fl.rotation.x = -Math.PI / 2; fl.position.set((x0 + 35.5) / 2, 0.012, (z0 + 35.5) / 2); fl.receiveShadow = true; this.group.add(fl);
     // yellow platform-edge strip + a stairwell down to the trains (spawn point at its top)
-    this.box(36 - x0 - 0.4, 0.02, 0.35, (x0 + 36) / 2 + 0.2, 0.03, 35.5, this.mat.yellow, null, false);
+    this.box(35.5 - x0 - 0.4, 0.02, 0.3, (x0 + 35.5) / 2, 0.03, 35.2, this.mat.yellow, null, false);
     this.col(33.1, 36.5, 0, 3.85, 33.7, 36.5);
-    const well = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.2), std({ color: '#050505', roughness: 1 })); well.rotation.x = -Math.PI / 2; well.position.set(34.5, 0.03, 34.9); this.group.add(well);
-    for (let k = 0; k < 6; k++) this.box(2.4, 0.05, 0.3, 34.5, 0.02 - k * 0.0, 34.0 + k * 0.33, std({ color: new THREE.Color().setScalar(0.18 - k * 0.028), roughness: 0.9 }), null, false);
-    for (const rx of [33.15, 35.85]) this.box(0.06, 1.0, 2.6, rx, 0.5, 34.9, this.mat.steel, null, false);
-    this.box(2.7, 0.06, 0.06, 34.5, 1.0, 33.65, this.mat.steel, null, false);
+    const well = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.7), std({ color: '#050505', roughness: 1 })); well.rotation.x = -Math.PI / 2; well.position.set(34.3, 0.03, 34.6); this.group.add(well);
+    for (let k = 0; k < 5; k++) this.box(2.1, 0.05, 0.3, 34.3, 0.035, 33.95 + k * 0.3, std({ color: new THREE.Color().setScalar(0.18 - k * 0.028), roughness: 0.9 }), null, false);
+    for (const rx of [33.15, 35.4]) this.box(0.06, 1.0, 1.75, rx, 0.5, 34.55, this.mat.steel, null, false);
+    this.box(2.3, 0.06, 0.06, 34.3, 1.0, 33.68, this.mat.steel, null, false);
     const tr = signTex([['TRAINS  ↓', 70, '#ffffff']], { bg: '#163a6b', accent: '#ffffff', w: 512, h: 128 });
-    const ts = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.5), std({ map: tr, emissive: '#ffffff', emissiveMap: tr, emissiveIntensity: 0.6 })); ts.position.set(34.5, 3.3, 33.68); ts.rotation.y = Math.PI; this.group.add(ts);
+    const ts = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.5), std({ map: tr, emissive: '#ffffff', emissiveMap: tr, emissiveIntensity: 0.6 })); ts.position.set(34.3, 3.3, 33.66); ts.rotation.y = Math.PI; this.group.add(ts);
     const ln = signTex([['LINE 4 · CANAL ST', 54, '#ffffff']], { bg: '#7a1f1f', accent: '#ffffff', w: 512, h: 112 });
     const ls = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.7), std({ map: ln, roughness: 0.6 })); ls.position.set(x0 + 0.23, 2.6, 31); ls.rotation.y = Math.PI / 2; this.group.add(ls);
     // pillars + flickering fluorescent tubes (emissive only, no extra real-time lights)
@@ -164,7 +165,7 @@ export class Areas {
       this.tubes.push({ m: t, bad: this.tubes.length === 1, seed: Math.random() * 10 });
     }
     // roll-up shutter + motor drum above the doorway (outside face)
-    const SW = sx1 - sx0, sm = std({ ...corrugated({ color: [138, 140, 136], seed: 33 }), metalness: 0.6 });
+    const SW = sx1 - sx0, sm = std({ ...corrugated({ color: [150, 156, 150], seed: 33 }), color: '#a9c0c8', metalness: 0.6 });
     for (const k of ['map', 'normalMap', 'roughnessMap']) { sm[k] = sm[k].clone(); sm[k].wrapS = sm[k].wrapT = THREE.RepeatWrapping; sm[k].repeat.set(3.2, 1); sm[k].needsUpdate = true; }
     const sg = new THREE.BoxGeometry(SW - 0.1, sh, 0.08), uv = sg.attributes.uv; // swap u/v so the ribs run sideways (roll-up slats)
     for (let i = 0; i < uv.count; i++) { const u = uv.getX(i); uv.setX(i, uv.getY(i)); uv.setY(i, u); }

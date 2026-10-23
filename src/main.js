@@ -990,7 +990,7 @@ class Game {
       const lp = best.light.position.clone().applyMatrix4(inv);
       const len = lp.length(); lp.multiplyScalar(Math.min(1, 2.5 / len));
       this.vmLocal.position.copy(lp); this.vmLocal.color.copy(best.light.color);
-      this.vmLocal.intensity = best.light.intensity * 0.12 * clamp(1 - bd / best.light.distance, 0, 1);
+      this.vmLocal.intensity = best.light.intensity / (this.lampMul || 1) * 0.12 * clamp(1 - bd / best.light.distance, 0, 1);
     }
   }
 

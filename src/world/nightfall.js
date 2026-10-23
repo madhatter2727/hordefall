@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { NIGHT } from '../tuning.js';
 import { EYE_MATS } from '../rig.js';
+import { SKY_NIGHT } from './skyline.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const C = (h) => new THREE.Color(h);
@@ -57,7 +58,7 @@ export class Nightfall {
     s.environmentIntensity = lerp(NIGHT.env[0], NIGHT.env[1], e);
     s.fog.density = lerp(NIGHT.fog[0], NIGHT.fog[1], e); s.fog.color.lerpColors(D.fog, N.fog, e);
     g.renderer.toneMappingExposure = lerp(NIGHT.exposure[0], NIGHT.exposure[1], e);
-    g.sky.material.uniforms.night.value = e;
+    g.sky.material.uniforms.night.value = e; SKY_NIGHT.value = e;
     g.vmSun.intensity = lerp(D.vmSun, D.vmSun * 0.4, e); g.vmSun.color.lerpColors(D.vmSunCol, N.vmSunCol, e);
     g.vmHemi.intensity = lerp(D.vmHemi, D.vmHemi * 0.55, e); g.vmScene.environmentIntensity = lerp(D.vmEnv, D.vmEnv * 0.5, e);
     for (const L of g.arena.lights) if (L.head) L.head.material.color.setRGB(6 + 4 * e, 4.2 + 2.8 * e, 2.4 + 1.4 * e);
