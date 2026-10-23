@@ -12,9 +12,11 @@ export class Minimap {
     this.el = el; this.ctx = el.getContext('2d');
     const dpr = Math.min(2, devicePixelRatio || 1); this.dpr = dpr;
     this.size = 176; el.width = el.height = this.size * dpr; el.style.width = el.style.height = this.size + 'px';
+    this.colliders = colliders; this.areas = stations?.areas || null;
     this.layout = this.bake(colliders);
     this.wallbuys = wallbuys; this.t = 0; this.acc = 0;
   }
+  rebake() { this.layout = this.bake(this.colliders); }
   bake(colliders) {
     const c = document.createElement('canvas'); c.width = c.height = SPAN * PX;
     const g = c.getContext('2d'), o = (SPAN / 2) * PX;
@@ -35,6 +37,29 @@ export class Minimap {
       else { fill = 'rgba(200,200,200,0.18)'; line = 'rgba(220,220,220,0.35)'; } // barriers, crates, cars
       g.fillStyle = fill; g.fillRect(X(k.minX), Z(k.minZ), w, d);
       g.strokeStyle = line; g.lineWidth = 1; g.strokeRect(X(k.minX) + 0.5, Z(k.minZ) + 0.5, w - 1, d - 1);
+    }
+    // M13 locked areas: red hatch + padlock + price until bought, then a green outline
+    if (this.areas) for (const A of this.areas.mapRects()) {
+      const [x0, z0, x1, z1] = A.rect, w = (x1 - x0) * PX, d = (z1 - z0) * PX;
+      g.save();
+      if (!A.open) {
+        g.beginPath(); g.rect(X(x0), Z(z0), w, d); g.clip();
+        g.fillStyle = 'rgba(255,60,50,0.16)'; g.fillRect(X(x0), Z(z0), w, d);
+        g.strokeStyle = 'rgba(255,80,60,0.45)'; g.lineWidth = 2;
+        for (let t = -d; t < w; t += 12) { g.beginPath(); g.moveTo(X(x0) + t, Z(z0) + d); g.lineTo(X(x0) + t + d, Z(z0)); g.stroke(); }
+        g.restore(); g.save();
+        g.strokeStyle = 'rgba(255,90,70,0.95)'; g.lineWidth = 3; g.setLineDash([8, 6]); g.strokeRect(X(x0) + 1.5, Z(z0) + 1.5, w - 3, d - 3); g.setLineDash([]);
+        const cx = X((x0 + x1) / 2), cy = Z((z0 + z1) / 2);
+        g.fillStyle = '#ff6a50'; g.strokeStyle = '#ff6a50'; g.lineWidth = 4;
+        g.beginPath(); g.arc(cx, cy - 8, 8, Math.PI, 0); g.stroke(); g.fillRect(cx - 12, cy - 8, 24, 18);
+        g.fillStyle = '#2a0c08'; g.fillRect(cx - 2, cy - 2, 4, 7);
+        // barrier marker
+        const B = A.gate; g.fillStyle = '#ff3a2a'; g.fillRect(X(B.x) - 5, Z(B.z) - 5, 10, 10);
+      } else {
+        g.strokeStyle = 'rgba(120,255,150,0.85)'; g.lineWidth = 3; g.strokeRect(X(x0) + 1.5, Z(z0) + 1.5, w - 3, d - 3);
+        g.fillStyle = 'rgba(120,255,150,0.08)'; g.fillRect(X(x0), Z(z0), w, d);
+      }
+      g.restore();
     }
     // gate gaps
     g.strokeStyle = 'rgba(255,122,42,0.8)'; g.lineWidth = 3;

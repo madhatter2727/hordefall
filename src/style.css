@@ -264,3 +264,7 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 #drinktint { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 30%, var(--c) 130%); mix-blend-mode: screen; }
 #drinktint.on { animation: dktint 1.8s ease-out forwards; }
 @keyframes dktint { 0% { opacity: 0; } 15% { opacity: .85; } 100% { opacity: 0; } }
+
+/* M13 doors */
+#buyprompt b.area { color: #ffb15a; font-weight: 600; text-shadow: 0 0 10px rgba(255,150,60,.6); }
+#banner.area #banner-t { color: #ffb15a; text-shadow: 0 0 26px rgba(255,140,50,.8), 0 3px 10px #000; }

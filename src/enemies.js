@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
-import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE, STUCK } from './tuning.js';
+import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE, STUCK, AREAS } from './tuning.js';
 import { NavGrid } from './nav.js';
 import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE, GAIT, blendLayers } from './rig.js';
 
@@ -84,6 +84,7 @@ export class Horde {
     // the Colossus (2.2x scale, ~0.7 m body radius, 3.5 m tall, can only climb ~1.2 m) routes on its own grid
     this.navBig = new NavGrid(arena.colliders, ARENA.half, 0.5, { r: 0.75, climb: 1.25, head: 3.6 });
     this.flowT = 0; this.playerF = null; this.lureF = null; this.playerFBig = null;
+    this.extraSpawns = [];
     this.navStats = { sidesteps: 0, vaults: 0, climbs: 0, respawns: 0, builds: 0, buildMs: 0 };
     this._v = new THREE.Vector3();
     this.hash = new Map();
@@ -320,6 +321,13 @@ export class Horde {
     else this.lureF = null;
   }
   // steer along the flow field; remembers the next cell so the caller can climb/vault into it
+  // a door opened (or the run restarted): re-read the layout for both grids and drop every cached field
+  rebuildNav() {
+    const t0 = performance.now();
+    this.nav.bake(this.arena.colliders); this.navBig.bake(this.arena.colliders);
+    this.playerF = null; this.playerFBig = null; this.lureF = null; this.flowT = 0;
+    this.navStats.rebakeMs = performance.now() - t0;
+  }
   navOf(e) { return e.big ? this.navBig : this.nav; }
   fieldOf(e) { return e.lured ? this.lureF : e.big ? (this.playerFBig || (this.playerFBig = this.navBig.build(this.player.pos.x, this.player.pos.z, this.player.pos.y, 'playerBig'))) : this.playerF; }
   navDir(e, F, out) {
@@ -631,11 +639,12 @@ export class Horde {
         this.spawnT -= dt;
         const W = this.W || (this.W = waveParams(Math.max(1, this.wave)));
         if (this.spawnT <= 0 && this.aliveCount() < W.maxAlive) {
-          const spawns = this.arena.spawns;
+          const inner = this.extraSpawns.length > 0 && Math.random() < AREAS.spawnShare; // opened areas have their own spawns
+          const spawns = inner ? this.extraSpawns : this.arena.spawns;
           const sp = spawns[Math.floor(Math.random() * spawns.length)];
           const brute = this.brutesLeft > 0 && Math.random() < this.brutesLeft / this.toSpawn + 0.05;
           if (brute) this.brutesLeft--;
-          const at = sp.clone().add(new THREE.Vector3(rand(-2.5, 2.5), 0, rand(-2.5, 2.5)));
+          const j = inner ? 0.5 : 2.5, at = sp.clone().add(new THREE.Vector3(rand(-j, j), 0, rand(-j, j)));
           let type = brute ? 'brute' : 'runner';
           if (!brute && this.wave >= SPITTERS.fromWave && this.spittersAlive() < SPITTERS.maxAlive(this.wave) && Math.random() < SPITTERS.baseChance + this.wave * SPITTERS.perWave) type = 'spitter';
           this.spawn(type, at, type === 'runner' && Math.random() < IDLE_CHANCE);

@@ -99,6 +99,7 @@ export const CRATE = {
     { x: 16, z: -26, ry: 0 },
     { x: -8, z: 24, ry: Math.PI },
     { x: 26, z: -6, ry: -Math.PI / 2 },
+    { x: 30, z: 33.5, ry: Math.PI, area: 'underpass' }, // only once THE UNDERPASS is open
   ],
 };
 
@@ -138,6 +139,47 @@ export const DRINKS = {
     { id: 'bulwark', name: 'BULWARK BREW', blurb: 'Max health 100 → 200', price: 2500, color: '#ff3b3b', x: -26, z: 10, ry: Math.PI / 2, hp: 100 },
     { id: 'snapload', name: 'SNAPLOAD SODA', blurb: 'Reload 50% faster', price: 3000, color: '#5cff6a', x: 10, z: 25, ry: Math.PI, reload: 1.5 },
     { id: 'hairtrigger', name: 'HAIRTRIGGER POP', blurb: 'Fire rate +33%', price: 2000, color: '#ffb02e', x: 26, z: -24, ry: -Math.PI / 4, rof: 1.33 },
-    { id: 'lastgasp', name: 'LAST GASP TONIC', blurb: 'Get back up once when you would die', price: 4000, color: '#b47bff', x: -6, z: -25, ry: 0, revive: { hp: 60, immune: 3, push: 7, dmg: 150 } },
+    { id: 'lastgasp', name: 'LAST GASP TONIC', blurb: 'Get back up once when you would die', price: 4000, color: '#b47bff', x: -33, z: -31.5, y: 3.2, ry: Math.PI / 2, area: 'roof', revive: { hp: 60, immune: 3, push: 7, dmg: 150 } },
   ],
+};
+
+// ============================================================================
+// M13 — Locked areas behind buyable barriers. Opened areas stay open for the whole run.
+//   price        points to open
+//   rect         footprint on the map (x0, z0, x1, z1); shown on the minimap as locked/open
+//   barrier      the blocking piece the prompt sits on (centre, facing normal), kind = gate | shutter
+//   spawns       zombie spawn points inside; they only switch on once the area is open
+//   spawnShare   chance that a zombie comes from an opened area's spawn instead of a street gate
+// ============================================================================
+export const AREAS = {
+  spawnShare: 0.25,
+  list: [
+    { id: 'roof', name: 'THE DEPOT ROOF', blurb: 'Rooftop over the old depot', price: 1000, kind: 'gate',
+      rect: [-36, -36, -20.2, -27.2], roofY: 3.2,
+      barrier: { x: -20.3, z: -30, nx: 1, nz: 0, w: 2.8 },
+      spawns: [[-30, 3.2, -34.2], [-34.2, 3.2, -28.8]] },
+    { id: 'underpass', name: 'THE UNDERPASS', blurb: 'Old subway concourse', price: 1500, kind: 'shutter',
+      rect: [26, 27, 36, 36],
+      barrier: { x: 31, z: 27, nx: 0, nz: -1, w: 3 },
+      spawns: [[33.4, 0, 32.6]] },
+  ],
+};
+
+// ============================================================================
+// M13 — Nightfall. 0 = sunset, 1 = full night; set by the wave number and eased in between waves.
+//   stage(w)      night amount for wave w (sunset 1-3, dusk 4-9, night 10+)
+//   blend         seconds to ease from one wave's look to the next
+//   sun/hemi/env  light intensities at sunset -> night (the sun becomes cold moonlight)
+//   fog           fog density at sunset -> night
+//   exposure      tone-mapping exposure at sunset -> night (keeps a readable minimum brightness)
+//   lampBoost     street lamps and fires get this much brighter at full night (pools of light)
+//   lampFlicker   extra flicker on every other lamp at night
+//   flashlight    weapon light at full night (no shadows); comes on from night amount `flashOn`
+//   eyeGlow       zombie eye emissive at full night
+// ============================================================================
+export const NIGHT = {
+  stage: (w) => (w <= 3 ? 0 : w >= 10 ? 1 : (w - 3) / 7),
+  blend: 10,
+  sun: [3.4, 0.55], hemi: [1.1, 0.55], env: [0.5, 0.2], fog: [0.0115, 0.024], exposure: [1.05, 1.32],
+  lampBoost: 1.1, lampFlicker: 0.12, flashlight: 34, flashOn: 0.35, eyeGlow: 5.5,
 };

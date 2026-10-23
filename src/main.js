@@ -22,6 +22,8 @@ import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
 import { PowerUps, POWER_TYPES, powerIconURL } from './powerups.js';
 import { POWERUPS, FEEDBACK, BOSS_HIT, CRATE, FORGE, DRINKS } from './tuning.js';
+import { Areas } from './world/areas.js';
+import { Nightfall } from './world/nightfall.js';
 
 const DEG = Math.PI / 180;
 const HIP_FOV = 70, VM_HIP_FOV = 54;
@@ -111,6 +113,7 @@ class Game {
       refund: (n) => { this.pts += n; this.hudDirty = true; },
       give: (id) => { const r = this.arsenal.give(id); const d = this.arsenal.all[id].def; this.feed(`<b>${d.name}</b>${d.rare ? ' · RARE' : ''}`, 0); return r; },
       banner: (t, sub, cls) => this.banner(t, sub, cls),
+      areaOpen: (id) => !!this.areas?.isOpen(id),
       spark: (p, col, n) => this.spark(p, col, n),
       smoke: (p) => this.fx.alpha.spawn({ pos: p.clone(), vel: new THREE.Vector3(rand(-0.2, 0.2), rand(0.8, 1.4), rand(-0.2, 0.2)), life: rand(1.4, 2.4), size: rand(0.12, 0.2), grow: 0.8, col: new THREE.Color(0.3, 0.29, 0.3), alpha: 0.3, drag: 1.2, grav: -0.2 }),
       upgraded: (w) => { this.announce('WEAPON UPGRADED', w.def.name, '#ff6af0'); this.shake(0.15); this.hudDirty = true; },
@@ -121,6 +124,13 @@ class Game {
       audio: this.audio, vmCamera: this.vmCamera, owned: () => this.drinksOwned,
       spend: (n) => { if (this.pts < n) { this.audio.play('dry'); return false; } this.pts -= n; this.hudDirty = true; return true; },
       buy: (d) => this.drinkPerk(d),
+    });
+
+    // M13: locked areas (their walls + barrier colliders go in before the nav grids are built)
+    this.areas = new Areas(scene, this.arena.colliders, {
+      audio: this.audio,
+      onOpen: (a) => this.areaOpened(a),
+      onReset: () => this.areaLayoutChanged(),
     });
 
     this.blade = new MacheteVM(this.vmCamera, this.arsenal.models.materials);
@@ -148,7 +158,8 @@ class Game {
     this.wallbuys = new WallBuys(scene, this.arsenal, WEAPONS);
     this.powerups = new PowerUps(scene, { groundAt: (x, z, y) => this.horde.groundAt(x, z, y), audio: this.audio, walkable: (p) => this.walkableNear(p) });
     this.power = { bounty: 0, reaper: 0 }; this.slowT = 0;
-    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys, { icons: () => [...this.stations.icons(), ...this.drinks.icons()] });
+    this.minimap = new Minimap($('minimap'), this.arena.colliders, this.wallbuys, { areas: this.areas, icons: () => [...this.stations.icons(), ...this.drinks.icons()] });
+    this.nightfall = new Nightfall(this); this.lampMul = 1; this.lampFlick = 0;
     this.post = new Post(r, scene, this.camera, this.vmScene, this.vmCamera);
     this.applyQuality(this.quality);
 
@@ -189,7 +200,8 @@ class Game {
       if (e.code === 'KeyP' && this.state === 'play') document.exitPointerLock();
       if (e.code === 'KeyF' && this.state === 'play') {
         const st = this.stationTarget;
-        if (this.drinkTarget) this.drinks.use(this.drinkTarget);
+        if (this.areaTarget) { const A = this.areaTarget; if (this.pts < A.def.price) this.audio.play('dry'); else { this.pts -= A.def.price; this.hudDirty = true; this.areas.open(A); } }
+        else if (this.drinkTarget) this.drinks.use(this.drinkTarget);
         else if (st?.kind === 'crate') this.stations.useCrate();
         else if (st?.kind === 'forge') this.stations.useForge();
         else if (this.wallTarget) this.buy('gun:' + this.wallTarget.id);
@@ -236,7 +248,7 @@ class Game {
     this.audio.init();
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
-    this.perks = {}; this.drinksOwned = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.drinks.reset(); this.immuneT = 0; this.renderDrinks(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
+    this.perks = {}; this.drinksOwned = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.drinks.reset(); this.areas.reset(); this.nightfall.snap(1); this.immuneT = 0; this.renderDrinks(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
     this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
@@ -248,6 +260,15 @@ class Game {
     if (locked) {
       if (this.state === 'paused' || this.state === 'play') { this.state = 'play'; this.show(null); }
     } else if (this.state === 'play') { this.state = 'paused'; this.show('pause'); }
+  }
+  // M13: a barrier was bought — new layout for nav + minimap, its spawns switch on
+  areaOpened(a) {
+    this.areaLayoutChanged();
+    this.banner(a.def.name + ' OPEN', a.def.id === 'roof' ? 'Up the stairs: LAST GASP TONIC waits on the roof' : 'The salvage crate can turn up down here now', 'area');
+    this.feed(`<b>${a.def.name}</b> opened`, 0); this.shake(0.12);
+  }
+  areaLayoutChanged() {
+    this.horde.rebuildNav(); this.horde.extraSpawns = this.areas.openSpawns(); this.minimap?.rebake();
   }
   banner(title, sub, cls = '') {
     const b = $('banner'); $('banner-t').textContent = title; $('banner-s').textContent = sub;
@@ -396,8 +417,10 @@ class Game {
     const b = this.state === 'play' ? this.wallbuys.nearest(this.player.pos, this.camera.getWorldDirection(this._wbDir || (this._wbDir = new THREE.Vector3()))) : null;
     const dk = this.state === 'play' && !b ? this.drinks.target(this.player.pos, this._wbDir) : null;
     const st = this.state === 'play' && !b && !dk ? this.stations.target(this.player.pos, this._wbDir) : null;
-    this.wallTarget = b; this.stationTarget = st; this.drinkTarget = dk;
+    const ar = this.state === 'play' && !b && !dk && !st ? this.areas.target(this.player.pos, this._wbDir) : null;
+    this.wallTarget = b; this.stationTarget = st; this.drinkTarget = dk; this.areaTarget = ar;
     let html = '';
+    if (ar) html = `<kbd>F</kbd> OPEN <b class="area">${ar.def.name}</b> <i>${ar.def.blurb}</i> <span class="${this.pts >= ar.def.price ? 'ok' : 'no'}">${ar.def.price.toLocaleString()}</span>`;
     if (dk) {
       const d = dk.d, n = Object.keys(this.drinksOwned).length;
       html = this.drinksOwned[d.id] ? `<i>${d.name} · ALREADY IN YOUR SYSTEM</i>`
@@ -913,11 +936,13 @@ class Game {
       this.wallbuys.update(this.time);
       this.stations.update(worldDt, this.time);
       this.drinks.update(dt, this.player.pos); this.immuneT = Math.max(0, (this.immuneT || 0) - dt);
+      this.areas.update(dt, this.time);
       this.updateWallPrompt();
       this.fx.update(worldDt, this.camera, this.time);
     }
     // lights
-    for (const L of this.arena.lights) L.light.intensity = L.base * (1 - L.flicker + L.flicker * (0.6 + 0.4 * Math.sin(this.time * 17 + L.base) * Math.sin(this.time * 7.3 + L.base * 3)));
+    this.nightfall.update(dt, this.horde.wave || 1);
+    this.arena.lights.forEach((L, i) => { const fl = L.flicker + (i % 2 ? this.lampFlick : 0), hum = Math.sin(this.time * 17 + L.base + i) * Math.sin(this.time * 7.3 + L.base * 3 + i * 1.7); L.light.intensity = L.base * this.lampMul * (1 - fl + fl * (0.6 + 0.4 * hum)) * (i % 2 && this.lampFlick > 0.05 && Math.sin(this.time * 2.1 + i) > 0.97 ? 0.25 : 1); });
     this.sky.material.uniforms.time.value = this.time;
     this.updateViewmodelLights();
 
@@ -1057,6 +1082,11 @@ window.__debug = {
   power(type, x, z) { const p = game.player.pos; return !!game.powerups.spawn(type, x ?? p.x, z ?? p.z - 3, p.y); },
   slowmo() { game.slowT = FEEDBACK.slowmo.dur; },
   drinks() { return { owned: Object.keys(game.drinksOwned), drinking: game.drinks.drinking, maxHealth: game.player.maxHealth, health: Math.round(game.player.health), alive: game.player.alive, rpmAR: Math.round(game.arsenal.all.ar.def.rpm), reloadAR: +game.arsenal.all.ar.def.reload.toFixed(3) }; },
+  doors() { return { list: game.areas.list.map((a) => ({ id: a.id, open: a.open, price: a.def.price, t: +a.t.toFixed(2) })), target: game.areaTarget?.id || null, extraSpawns: game.horde.extraSpawns.length, colliders: game.arena.colliders.length, rebakeMs: +(game.horde.navStats.rebakeMs || 0).toFixed(1) }; },
+  openDoor(id, silent = false) { const a = game.areas.list.find((x) => x.id === id); game.areas.open(a, silent); return this.doors(); },
+  navAt(x, z, big = false) { const N = big ? game.horde.navBig : game.horde.nav, c = N.cellOf(x, z); return { blocked: N.blocked[c], h: +N.height[c].toFixed(2) }; },
+  night(w) { if (w != null) { game.nightfall.snap(w); } return { k: +game.nightfall.k.toFixed(3), stage: game.nightfall.stageName(), exposure: +game.renderer.toneMappingExposure.toFixed(3), fog: +game.scene.fog.density.toFixed(4), sun: +game.sun.intensity.toFixed(2), flash: +game.nightfall.flash.intensity.toFixed(1), lights: game.renderer.info.programs?.length }; },
+  crateTo(i) { game.stations.setActive(i); game.stations.crate.state = 'idle'; return this.crate(); },
   crate() { const C = game.stations.crate; return { at: C.at, state: C.state, t: +C.t.toFixed(2), result: C.result, next: C.next, spins: C.spins }; },
   forge() { const F = game.stations.forge; return { state: F.state, t: +F.t.toFixed(2), gun: F.w?.base.id || null }; },
   frames(n) { return new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }); },

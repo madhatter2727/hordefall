@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { corrugated, crateWood, facade } from './textures.js';
 import { pbr } from '../assets.js';
 import { mulberry } from '../core/util.js';
+import { AREAS } from '../tuning.js';
 
 // Box geometry whose UVs tile at a fixed world density (texel size independent of box size).
 function tiledBox(w, h, d, density = 0.25) {
@@ -435,7 +436,9 @@ export function buildArena(scene, quality, A) {
   // small clutter (no collision)
   const clutter = [['trashbag', 0.9], ['old_tyre', 1], ['water_manhole_cover', 1], ['wooden_crate_01', 1], ['utility_box_01', 1], ['metal_trash_can', 0.8], ['fire_hydrant', 1]];
   const spots = [[-33.4, 18], [-33.2, -24], [33.3, 22], [33.5, -6], [18, 33.4], [-26, 33.2], [6, -33.4], [-30, -33.3], [29, -33.2], [-5, 33.5], [33.4, 30], [-33.5, 4]];
+  const inArea = (x, z) => AREAS.list.some(({ rect: [x0, z0, x1, z1] }) => x > x0 - 0.8 && x < x1 + 0.8 && z > z0 - 0.8 && z < z1 + 0.8);
   spots.forEach(([x, z], i) => {
+    if (inArea(x, z)) return; // M13: kept clear for the locked areas
     const [id, s] = clutter[i % clutter.length];
     const rot = Math.abs(x) > Math.abs(z) ? (x > 0 ? -Math.PI / 2 : Math.PI / 2) : (z > 0 ? Math.PI : 0);
     propAt(id, x, 0, z, rot + (r() - 0.5) * 0.4, s);

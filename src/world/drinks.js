@@ -50,7 +50,7 @@ export class Drinks {
       const col = new THREE.Color(d.color);
       const paint = new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.55), roughness: 0.35, metalness: 0.35 });
       const glow = new THREE.MeshStandardMaterial({ color: '#000', emissive: col, emissiveIntensity: 2.6 });
-      const g = new THREE.Group(); g.position.set(d.x, 0, d.z); g.rotation.y = d.ry;
+      const g = new THREE.Group(); g.position.set(d.x, d.y || 0, d.z); g.rotation.y = d.ry;
       const W = 1.0, D = 0.8, H = 1.95;
       // body: each machine has its own shape (0 rounded-top cabinet, 1 slanted sci-fi front, 2 twin-column, 3 apothecary cabinet)
       const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), paint); body.position.y = H / 2 + 0.06; body.castShadow = body.receiveShadow = true; g.add(body);
@@ -77,8 +77,8 @@ export class Drinks {
       const light = { intensity: 0 }; // emissive only: no extra real-time lights (keeps the frame cost flat)
       scene.add(g);
       const c = Math.abs(Math.cos(d.ry)), s = Math.abs(Math.sin(d.ry)), hx = ((W + 0.3) / 2) * c + ((D + 0.1) / 2) * s, hz = ((W + 0.3) / 2) * s + ((D + 0.1) / 2) * c;
-      colliders.push({ minX: d.x - hx, maxX: d.x + hx, minY: 0, maxY: H + 0.4, minZ: d.z - hz, maxZ: d.z + hz, walk: false, mat: 'metal' });
-      this.list.push({ d, group: g, sign, glow, light, pos: new THREE.Vector3(d.x, 0, d.z), normal: new THREE.Vector3(Math.sin(d.ry), 0, Math.cos(d.ry)), label });
+      colliders.push({ minX: d.x - hx, maxX: d.x + hx, minY: d.y || 0, maxY: (d.y || 0) + H + 0.4, minZ: d.z - hz, maxZ: d.z + hz, walk: false, mat: 'metal' });
+      this.list.push({ d, group: g, sign, glow, light, pos: new THREE.Vector3(d.x, d.y || 0, d.z), normal: new THREE.Vector3(Math.sin(d.ry), 0, Math.cos(d.ry)), label });
     });
     this.buildViewBottle(hooks.vmCamera);
     this.anim = null;

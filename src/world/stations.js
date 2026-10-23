@@ -196,7 +196,10 @@ export class Stations {
       if (C.t >= CRATE.spin) {
         if (C.jam) {
           this.hideShown(); C.state = 'jam'; C.t = 0; H.refund(CRATE.cost);
-          let n; do n = (Math.random() * this.crates.length) | 0; while (n === C.at && this.crates.length > 1);
+          // jump to another spot; spots inside a locked area only count once it's open (H.areaOpen)
+          const ok = this.crates.map((k, j) => j).filter((j) => j !== C.at && (!this.crates[j].spot.area || H.areaOpen?.(this.crates[j].spot.area)));
+          const fresh = ok.filter((j) => this.crates[j].spot.area); // a freshly opened area pulls the crate in more often
+          const n = fresh.length && Math.random() < 0.5 ? fresh[(Math.random() * fresh.length) | 0] : ok[(Math.random() * ok.length) | 0];
           C.next = n; H.audio.play('crateJam'); H.spark(new THREE.Vector3(c.spot.x, c.top + 0.4, c.spot.z), 0xff6a3a, 40);
           H.banner('CRATE JAMMED', 'It is hauling itself to a new spot — follow the blue beam', 'crate');
         } else {

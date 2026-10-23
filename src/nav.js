@@ -13,8 +13,16 @@ export class NavGrid {
     this.half = half; this.cell = cell;
     const N = (this.N = Math.round((half * 2) / cell));
     this.height = new Float32Array(N * N); this.blocked = new Uint8Array(N * N); this.near = new Uint8Array(N * N);
+    this.opts = opts; this.climb = opts.climb ?? CLIMB;
+    this.bake(colliders);
+    // heap + scratch for Dijkstra
+    this.heapK = new Int32Array(N * N * 4); this.heapV = new Int32Array(N * N * 4);
+    this.fields = new Map();
+  }
+  // (re)compute floor heights / blocked cells from the collision layout (again after a door opens)
+  bake(colliders) {
+    const N = this.N, half = this.half, cell = this.cell, opts = this.opts;
     const r = opts.r ?? 0.3, head = opts.head ?? 1.7, big = !!opts.r && opts.r > 0.3;
-    this.climb = opts.climb ?? CLIMB;
     for (let gz = 0; gz < N; gz++) for (let gx = 0; gx < N; gx++) {
       const x = (gx + 0.5) * cell - half, z = (gz + 0.5) * cell - half, i = gz * N + gx;
       let floor = 0, block = 0, near = 0;
@@ -34,9 +42,7 @@ export class NavGrid {
       }
       this.height[i] = floor; this.blocked[i] = block; this.near[i] = near;
     }
-    // heap + scratch for Dijkstra
-    this.heapK = new Int32Array(N * N * 4); this.heapV = new Int32Array(N * N * 4);
-    this.fields = new Map();
+    if (this.fields) for (const F of this.fields.values()) F.cell = -2; // force every flow field to rebuild
   }
   cellOf(x, z) {
     const N = this.N, gx = Math.floor((x + this.half) / this.cell), gz = Math.floor((z + this.half) / this.cell);

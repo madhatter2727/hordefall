@@ -92,6 +92,7 @@ const ZOMBIE_SHADER = (u) => (sh) => {
       }`);
 };
 
+export const EYE_MATS = []; // every zombie eye material (nightfall turns the glow up)
 export class ZombieFactory {
   constructor(gltf) {
     this.template = gltf.scene;
@@ -130,7 +131,7 @@ export class ZombieFactory {
       if (o.isSkinnedMesh) {
         o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
         const m = o.material.clone();
-        if (/eyes/.test(m.name)) { m.emissive = new THREE.Color(0.5, 0.42, 0.18); m.emissiveIntensity = 0.6; }
+        if (/eyes/.test(m.name)) { m.emissive = new THREE.Color(0.5, 0.42, 0.18); m.emissiveIntensity = 0.6; m.userData.eye = true; EYE_MATS.push(m); }
         else { const kind = /outfit/.test(m.name) ? 'Z_CLOTH' : 'Z_SKIN'; m.defines = { ...(m.defines || {}), [kind]: 1 }; m.onBeforeCompile = ZOMBIE_SHADER(u); m.customProgramCacheKey = () => 'zombie-' + kind; }
         o.material = m; R.meshes.push(o); R.mats.push(m);
       }
