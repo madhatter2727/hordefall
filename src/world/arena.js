@@ -436,7 +436,7 @@ export function buildArena(scene, quality, A) {
   // small clutter (no collision)
   const clutter = [['trashbag', 0.9], ['old_tyre', 1], ['water_manhole_cover', 1], ['wooden_crate_01', 1], ['utility_box_01', 1], ['metal_trash_can', 0.8], ['fire_hydrant', 1]];
   const spots = [[-33.4, 18], [-33.2, -24], [33.3, 22], [33.5, -6], [18, 33.4], [-26, 33.2], [6, -33.4], [-30, -33.3], [29, -33.2], [-5, 33.5], [33.4, 30], [-33.5, 4]];
-  const inArea = (x, z) => AREAS.list.some(({ rect: [x0, z0, x1, z1] }) => x > x0 - 0.8 && x < x1 + 0.8 && z > z0 - 0.8 && z < z1 + 0.8);
+  const inArea = (x, z, m = 0.8) => AREAS.list.some(({ rect: [x0, z0, x1, z1] }) => x > x0 - m && x < x1 + m && z > z0 - m && z < z1 + m);
   spots.forEach(([x, z], i) => {
     if (inArea(x, z)) return; // M13: kept clear for the locked areas
     const [id, s] = clutter[i % clutter.length];
@@ -451,6 +451,7 @@ export function buildArena(scene, quality, A) {
   // ---------- balconies (slab + railing) + soot above burned-out windows ----------
   const railMat = rustSteel;
   for (const b of balconies) {
+    if (b.p.y < 4.6 && inArea(b.p.x, b.p.z, 1.6)) continue; // M13: first-floor balconies would poke into the Underpass / over the Depot roof
     const slab = tiledBox(b.w, 0.14, 1.05, 1 / 2);
     slab.applyMatrix4(new THREE.Matrix4().compose(b.p.clone().add(new THREE.Vector3(0, -0.07, 0).add(new THREE.Vector3(0, 0, 0.52).applyQuaternion(b.q))), b.q, new THREE.Vector3(1, 1, 1)));
     add(concreteMat, slab, 0, 0, 0);
@@ -489,6 +490,7 @@ export function buildArena(scene, quality, A) {
     const cxp = F.o.clone().addScaledVector(F.a, (F.col + 0.5) * 3 * F.sx).addScaledVector(F.n, 0.78);
     for (let f = 1; f < F.floors; f++) {
       const y = f * 3 - 0.05;
+      if (f === 1 && inArea(cxp.x, cxp.z, 1.6)) continue;
       const base = new THREE.Matrix4().compose(cxp.clone().setY(y), q, new THREE.Vector3(1, 1, 1));
       fePiece('modular_fire_escape_platform_middle', base.clone().multiply(new THREE.Matrix4().makeTranslation(-(plat.min.x + plat.max.x) / 2, -plat.max.y, -(plat.min.z + plat.max.z) / 2)));
       fePiece('modular_fire_escape_railing_middle', base.clone().multiply(new THREE.Matrix4().makeTranslation(-(rail.min.x + rail.max.x) / 2, -rail.min.y, -(rail.min.z + rail.max.z) / 2)));

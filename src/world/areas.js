@@ -174,9 +174,7 @@ export class Areas {
     for (const gx of [sx0 + 0.05, sx1 - 0.05]) this.box(0.12, sh, 0.12, gx, sh / 2, z0 - 0.3, this.mat.dark);
     const hz = new THREE.Mesh(new THREE.PlaneGeometry(SW, 0.25), std({ color: '#c99a1e' })); hz.position.set(b.x, 0.14, z0 - 0.27); hz.rotation.y = Math.PI; this.group.add(hz);
     a.cols.push(this.col(sx0, sx1, 0, sh, z0 - 0.3, z0 + 0.2));
-    const sign = this.priceSign(a, 2.6, b.x, sh + 0.35, z0 - 0.22 - 0.03, Math.PI);
-    sign.position.z = z0 - 0.23; sign.scale.setScalar(0.95);
-    sign.position.y = 3.98;
+    const sign = this.priceSign(a, 2.3, sx0 - 1.45, 2.3, z0 - 0.22, Math.PI); // on the wall beside the shutter
     a.barrier = { kind: 'shutter', shutter, sh, sign, front: new THREE.Vector3(b.x, 0, z0 - 1.3) };
   }
 
