@@ -246,7 +246,7 @@ export const SPECIAL = {
   bonus: { clear: 400, flawless: 600, flawlessHp: 0.3, reward: 1 },
   types: {
     crawler:  { name: 'CRAWLER RUSH', sub: 'Low, fast, and coming from every gate', color: '#ff9a3a', count: 1.45, hp: 1, gap: 0.62, alive: 1.5, speed: [3.5, 4.6] },
-    fog:      { name: 'FOG WAVE', sub: 'You will hear them before you see them', color: '#9fd4ff', count: 1.05, hp: 1.05, gap: 0.9, alive: 1, fog: 3.4, fogColor: [0.34, 0.36, 0.4], groan: 2.2 },
+    fog:      { name: 'FOG WAVE', sub: 'You will hear them before you see them', color: '#9fd4ff', count: 1.05, hp: 1.05, gap: 0.9, alive: 1, fog: 4.5, fogColor: [0.52, 0.54, 0.58], groan: 2.2 },
     sprinter: { name: 'SPRINTER WAVE', sub: 'Every one of them runs', color: '#ff5a5a', count: 0.9, hp: 0.85, gap: 0.8, alive: 1.1, speed: [4.9, 5.7] },
     blackout: { name: 'BLACKOUT', sub: 'The lights are out. Your flashlight is all you have', color: '#c58bff', count: 1.0, hp: 1, gap: 0.9, alive: 1, lamps: 0.03, ambient: 0.55, flashlight: 1.3 },
     armored:  { name: 'ARMORED WAVE', sub: 'Thick hides. Extra drops to make up for it', color: '#9fb4c8', count: 0.85, hp: 2.0, gap: 1.0, alive: 1, drops: 2, tint: [0.5, 0.58, 0.7] },
