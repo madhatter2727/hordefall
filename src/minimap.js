@@ -138,7 +138,7 @@ export class Minimap {
       if (d > R - 3) { edge.push([dx / d, dy / d, e]); continue; }
       const above = e.pos.y - player.pos.y;
       if (e.type.boss) { this.skull(g, x, y); continue; }
-      const col = e.type.ranged ? '#7dff5a' : e.type.brute ? '#ff4a3a' : '#ff2a2a';
+      const col = e.type.bloater ? '#ffb02a' : e.type.jumper ? '#ff8a3a' : e.type.brute ? '#ff4a3a' : '#ff2a2a';
       const r = e.type.brute ? 3.6 : 2.6;
       g.fillStyle = col; g.shadowColor = col; g.shadowBlur = 5;
       g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
@@ -149,7 +149,7 @@ export class Minimap {
     g.strokeStyle = 'rgba(255,170,90,0.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
     for (const [ux, uy, e] of edge) {
       const a = Math.atan2(uy, ux), w = e.type.boss ? 0.16 : 0.07;
-      g.strokeStyle = e.type.boss ? '#ffd23f' : e.type.ranged ? 'rgba(125,255,90,.8)' : 'rgba(255,60,50,.8)'; g.lineWidth = e.type.boss ? 4 : 3;
+      g.strokeStyle = e.type.boss ? '#ffd23f' : e.type.bloater ? 'rgba(255,176,42,.85)' : e.type.jumper ? 'rgba(255,138,58,.85)' : 'rgba(255,60,50,.8)'; g.lineWidth = e.type.boss ? 4 : 3;
       g.beginPath(); g.arc(cx, cy, R + 1, a - w, a + w); g.stroke();
     }
     const [nx, ny] = (() => { const dx = 0, dz = -1; return [cx + (dx * cs - dz * sn) * (R + 0.5), cy + (dx * sn + dz * cs) * (R + 0.5)]; })();

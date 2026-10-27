@@ -95,7 +95,7 @@ export class PowerUps {
     this.reset();
   }
   reset() { for (const s of this.slots) { s.type = null; s.life = 0; s.root.visible = false; s.light.intensity = 0; } this.st = { drops: 0, kills: 0, gap: 0 }; }
-  newWave() { this.st.drops = 0; this.st.kills = 0; }
+  newWave(n, extra = 0) { this.st.drops = 0; this.st.kills = 0; this.st.extra = extra; }
   get waveDrops() { return this.st.drops; }
   // a husk died: maybe drop something there (random roll, or a guaranteed drop that's due; see droprules.js)
   maybeDrop(pos, wave, total, isLast, allowed = true) {

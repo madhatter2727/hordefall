@@ -268,3 +268,8 @@ input[type=range] { width: 200px; accent-color: #ff6a1c; } input[type=checkbox] 
 /* M13 doors */
 #buyprompt b.area { color: #ffb15a; font-weight: 600; text-shadow: 0 0 10px rgba(255,150,60,.6); }
 #banner.area #banner-t { color: #ffb15a; text-shadow: 0 0 26px rgba(255,140,50,.8), 0 3px 10px #000; }
+
+/* M14 special waves: banner uses --sc (the wave type's colour) */
+#banner.special #banner-t { color: var(--sc, #ff9a3a); font-size: 80px; letter-spacing: .1em; text-shadow: 0 0 36px var(--sc, #ff9a3a), 0 0 10px var(--sc, #ff9a3a), 0 3px 10px #000; }
+#banner.special #banner-s { color: #fff; opacity: .9; }
+#banner.special.on { animation: bn 4.2s ease-out forwards; }

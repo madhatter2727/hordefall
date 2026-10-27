@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, damp, rand, rayCapsule, raySphere, rayAABB } from './core/util.js';
 import { ARENA } from './world/arena.js';
-import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, SPITTERS, IDLE_CHANCE, STUCK, AREAS } from './tuning.js';
+import { waveParams, RUNNER_SPEED, SPRINTER_SPEED, BOSS_EVERY, ENEMIES as EN, ENEMY_SCHEDULE, scheduledCount, specialFor, IDLE_CHANCE, STUCK, AREAS } from './tuning.js';
 import { NavGrid } from './nav.js';
 import { ZombieFactory, resetRig, play, readJoints, captureRef, solveFromJoints, addStump, makeLimb, poseLimb, PART_BONE, GAIT, blendLayers } from './rig.js';
 
@@ -29,8 +29,10 @@ const BRACES = [[J.pelvis, J.lHip], [J.pelvis, J.rHip], [J.lHip, J.rHip], [J.che
 
 export const TYPES = {
   runner: { name: 'Husk', hp: 90, speed: 6.3, scale: 1, reach: 1.55, dmg: 14, windup: 0.3, cd: 0.95, mass: 1, points: 100, color: new THREE.Color(0.16, 0.13, 0.12), heat: 1, lean: 0.22, sever: 1, turn: 5 },
-  brute: { name: 'Brute', hp: 650, speed: 3.5, scale: 1.42, reach: 2.2, dmg: 34, windup: 0.55, cd: 1.7, mass: 4.5, points: 400, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.8, lean: 0.38, brute: true, sever: 2.2, turn: 3 },
-  spitter: { name: 'Spitter', hp: 120, speed: 4.6, scale: 0.97, reach: 1.5, dmg: 10, windup: 0.3, cd: 1.2, mass: 1, points: 175, color: new THREE.Color(0.14, 0.15, 0.11), heat: 1, lean: 0.3, hue: 1, ranged: true, bulk: 1.3, sever: 1, turn: 4.5 },
+  brute: { name: 'Brute', hp: EN.brute.hp, speed: EN.brute.speed, scale: EN.brute.scale, reach: 2.3, dmg: EN.brute.dmg, windup: 0.6, cd: 1.8, mass: 5, points: EN.brute.points, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.8, lean: 0.38, brute: true, armored: true, sever: 2.2, turn: 2.6 },
+  jumper: { name: 'Jumper', hp: EN.jumper.hp, speed: EN.jumper.speed, scale: EN.jumper.scale, reach: 1.5, dmg: EN.jumper.dmg, windup: 0.28, cd: 1.0, mass: 0.9, points: EN.jumper.points, color: new THREE.Color(0.14, 0.12, 0.12), heat: 1.1, lean: 0.34, jumper: true, sever: 1, turn: 6 },
+  bloater: { name: 'Bloater', hp: EN.bloater.hp, speed: EN.bloater.speed, scale: EN.bloater.scale, reach: 1.7, dmg: EN.bloater.dmg, windup: 0.5, cd: 1.8, mass: 2.4, points: EN.bloater.points, color: new THREE.Color(0.2, 0.15, 0.08), heat: 1.2, lean: 0.2, bloater: true, sever: 0.5, turn: 3 },
+  crawler: { name: 'Crawler', hp: EN.crawler.hp, speed: EN.crawler.speed, scale: EN.crawler.scale, reach: 1.3, dmg: EN.crawler.dmg, windup: 0.25, cd: 0.9, mass: 0.8, points: EN.crawler.points, color: new THREE.Color(0.15, 0.12, 0.11), heat: 1, lean: 0.3, crawler: true, sever: 1, turn: 6 },
   boss: { name: 'Colossus', hp: 5200, speed: 3.5, scale: 2.2, reach: 3.4, dmg: 30, windup: 0.6, cd: 1.5, mass: 40, points: 3000, color: new THREE.Color(0.1, 0.085, 0.08), heat: 1.4, lean: 0.34, brute: true, boss: true, sever: 0, bulk: 1.3, turn: 1.8 },
 };
 // part index groups: severing an upper limb takes the whole arm/leg
@@ -38,7 +40,6 @@ const SEVER_GROUP = { 2: [2, 3], 3: [3], 4: [4, 5], 5: [5], 6: [6, 7], 7: [7], 8
 const SEVER_THR = [1e9, 50, 55, 45, 55, 45, 75, 60, 75, 60];
 const SEVER_F = { machete: 2.8, ar: 0.55, sg: 1.0, mr: 1.45, smg: 0.5, lmg: 0.7, rv: 1.35, boom: 2.2 };
 const LIMB_MAX = 10, MAXI = 72 + LIMB_MAX;
-const SPIT_CHARGE = 0.85, SPIT_G = 14;
 
 function emberTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 256;
@@ -65,6 +66,7 @@ function worldRotate(bone, axis, ang) {
   bone.updateMatrixWorld(true);
 }
 const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tD = new THREE.Vector3(), tN = new THREE.Vector3();
+const tmpC = new THREE.Color(), tmpC2 = new THREE.Color(), vA = new THREE.Vector3(), vB = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tX = new THREE.Vector3(), tY = new THREE.Vector3(), tZ = new THREE.Vector3(), tS = new THREE.Vector3();
 
 export class Horde {
@@ -91,15 +93,9 @@ export class Horde {
     this.wave = 0; this.toSpawn = 0; this.spawnT = 0; this.intermission = 0; this.running = false; this.lures = [];
     this.growlT = 0; this.alertT = 0; this.screamT = 0;
     this.limbs = []; this.limbPool = [];
-    this.puddles = []; this.boss = null; this.bossDelay = 0;
-    // pooled acid globs
-    const orbGeo = new THREE.SphereGeometry(1, 14, 10), haloGeo = new THREE.SphereGeometry(1.7, 12, 8);
-    const orbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 4.2, 0.5), toneMapped: false });
-    const haloMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.4, 0.15), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    this.proj = Array.from({ length: 14 }, () => {
-      const m = new THREE.Mesh(orbGeo, orbMat); m.add(new THREE.Mesh(haloGeo, haloMat)); m.visible = false; scene.add(m);
-      return { mesh: m, vel: new THREE.Vector3(), state: 'free', life: 0, trailT: 0 };
-    });
+    this.boss = null; this.bossDelay = 0;
+    this.special = null; this.lastSpecial = null; this.bloatersLeft = 0; this.brutesLeft = 0;
+    this.buildPlates(scene);
     this.buildBossRig(scene, ember);
   }
 
@@ -158,12 +154,11 @@ export class Horde {
   reset() {
     for (const e of this.enemies) { this.releaseRig(e); this.pool.push(e); }
     for (const L of this.limbs) { this.releaseLimb(L); this.limbPool.push(L); }
-    this.limbs.length = 0; this.puddles.length = 0; this.boss = null; this.bossDelay = 0; this.bossWave = false;
-    for (const pr of this.proj) { pr.state = 'free'; pr.mesh.visible = false; }
+    this.limbs.length = 0; this.boss = null; this.bossDelay = 0; this.bossWave = false; this.special = null; this.lastSpecial = null;
     this.enemies.length = 0; this.wave = 0; this.toSpawn = 0; this.running = false; this.waveKilled = 0; this.waveTotal = 0; this.W = null;
   }
   takeRig() { const R = this.rigPool.pop() || (() => { const r = this.factory.make(); this.scene.add(r.root); return r; })(); resetRig(R); R.root.visible = true; return R; }
-  releaseRig(e) { if (!e.rig) return; resetRig(e.rig); e.rig.root.visible = false; this.rigPool.push(e.rig); e.rig = null; }
+  releaseRig(e) { this.detach(e); if (!e.rig) return; resetRig(e.rig); e.rig.root.visible = false; this.rigPool.push(e.rig); e.rig = null; }
   releaseLimb(L) { if (!L.rig) return; resetRig(L.rig); L.rig.root.visible = false; this.limbRigPool.push(L.rig); L.rig = null; }
   start() { this.running = true; this.intermission = 2.5; this.cleared = false; this.hold = false; }
   ready(t = 2.5) { this.hold = false; this.intermission = t; }
@@ -173,11 +168,15 @@ export class Horde {
     this.wave++;
     this.bossWave = this.wave % BOSS_EVERY === 0;
     const W = (this.W = waveParams(this.wave));
+    // special wave (never a boss wave): reshapes this wave's numbers, see SPECIAL in tuning.js
+    const sp = (this.special = this.bossWave ? null : specialFor(this.wave));
+    if (sp) { W.count = Math.round(W.count * sp.count); W.hp *= sp.hp; W.gap = Math.max(0.25, W.gap * sp.gap); W.maxAlive = Math.min(60, Math.round(W.maxAlive * sp.alive) + sp.aliveAdd); }
     const n = W.count;
-    this.brutesLeft = this.bossWave ? 0 : W.brutes;
+    this.brutesLeft = this.bossWave || sp?.type === 'crawler' ? 0 : scheduledCount(ENEMY_SCHEDULE.brutes, this.wave);
+    this.bloatersLeft = this.bossWave || sp?.type === 'crawler' ? 0 : scheduledCount(ENEMY_SCHEDULE.bloaters, this.wave);
     if (this.bossWave) this.bossDelay = 2.4;
     this.toSpawn = n; this.waveTotal = n; this.spawnT = this.bossWave ? 4 : 1.2;
-    this.hooks.onWaveStart?.(this.wave, n + (this.bossWave ? 1 : 0), this.bossWave);
+    this.hooks.onWaveStart?.(this.wave, n + (this.bossWave ? 1 : 0), this.bossWave, sp);
   }
   spawnBoss(at) {
     if (!at) { // farthest spawn point from the player
@@ -196,7 +195,7 @@ export class Horde {
     for (const L of this.lures) { const dx = e.pos.x - L.pos.x, dz = e.pos.z - L.pos.z; if (dx * dx + dz * dz < L.r * L.r) return L; }
     return null;
   }
-  spittersAlive() { let n = 0; for (const e of this.enemies) if (!e.dead && e.type.ranged) n++; return n; }
+  countOf(key) { let n = 0; for (const e of this.enemies) if (!e.dead && e.key === key) n++; return n; }
   // gunfire wakes idle husks within earshot (closer ones react first)
   alert(pos, radius = 34) {
     for (const e of this.enemies) {
@@ -251,7 +250,8 @@ export class Horde {
     // speed class: shamblers early, joggers mid, sprinters late (see tuning.js)
     e.cls = 'shambler';
     if (T.boss) e.speed = T.speed;
-    else if (T.brute || T.ranged) e.speed = T.speed * W.pace * rand(0.9, 1.1);
+    else if (T.brute || T.bloater || T.jumper) e.speed = T.speed * (T.jumper ? 1 : W.pace) * rand(0.9, 1.1);
+    else if (T.crawler) e.speed = rand(...(this.special?.speed || [T.speed * 0.8, T.speed * 1.1]));
     else {
       const r = Math.random();
       if (r < W.sprinters) { e.cls = 'sprinter'; e.speed = rand(...SPRINTER_SPEED); }
@@ -267,14 +267,15 @@ export class Horde {
     // gait personality: phase offset, cadence/stride, limp, lurch, how hard the arms reach
     const limp = Math.random() < (T.boss ? 0 : 0.3) ? rand(0.12, 0.3) : 0;
     e.gait = { offset: Math.random(), cadence: 1, stride: 1, limp, limpSide: Math.random() < 0.5 ? 0.3 : Math.PI + 0.3,
-      lurch: T.boss ? 0.16 : rand(0.04, 0.2), reach: T.boss ? 0.15 : T.ranged ? 0.1 : Math.random() < 0.65 ? rand(0.5, 1.0) : rand(0, 0.25), swing: rand(0.15, 0.35),
+      lurch: T.boss ? 0.16 : rand(0.04, 0.2), reach: T.boss ? 0.15 : Math.random() < 0.65 ? rand(0.5, 1.0) : rand(0, 0.25), swing: rand(0.15, 0.35),
       armL: rand(-0.2, 0.2), armR: rand(-0.2, 0.2), walkMax: T.boss ? 1.6 : rand(3.6, 4.4), runMin: T.boss ? 0.45 : rand(0.75, 0.9), turn: T.turn ?? 4 };
     e.gph = Math.random(); e.reachNow = 0; e.hunt = false; e.lastStep = -1;
     e.heat = T.heat * rand(0.8, 1.2);
     e.lastHit = -1; e.rest = {}; e.pooled = false; e.near = null;
     e.maxHp = e.hp; e.lost = 0; e.limbDmg = e.limbDmg || new Float32Array(10); e.limbDmg.fill(0); e.wound = e.wound || new Float32Array(10); e.wound.fill(0);
     e.crawl = false; e.crawlRef = false; e.armless = false; e.stumps = []; e.facePlayer = false;
-    e.spitCd = rand(1.2, 2.5); e.charge = -1; e.orb = null; e.strafe = Math.random() < 0.5 ? -1 : 1; e.strafeT = rand(1.5, 3); e.spitRecoil = 0;
+    e.charge = -1; e.jp = 0; e.jt = 0; e.jcd = rand(1.2, 2.4); e.hopCd = 0; e.jkind = 'leap'; e.jhit = false; e.jtgt = e.jtgt || new THREE.Vector3(); e.jApex = 0.6; e.lastBeat = -1; e.trailT = 0;
+    e.legHurt = 0; e.crippled = false; e.pulsePh = rand(0, 6); e.beat = 0; e.fuse = -1; e.att = null; e.armorT = 0;
     e.bs = 'walk'; e.bt = 0; e.chargeCd = 3; e.slamCd = 2; e.stunDur = 1; e.chargeDir = e.chargeDir || new THREE.Vector3(); e.chargeHit = false; e.prePos = e.prePos || new THREE.Vector3();
     e.big = T.scale > 1.8; e.stk = { t: 0, x: at.x, z: at.z, fd: 1e9, n: 0, side: 1, sideT: 0 }; e.navNext = -1; e.navDh = 0; e.respawned = 0;
     e.aware = !idle; e.alertIn = undefined; e.wander = new THREE.Vector3(rand(-28, 28), 0, rand(-28, 28)); e.wanderT = rand(4, 9);
@@ -282,12 +283,16 @@ export class Horde {
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
     e.gatePt.copy(g); e.outside = Math.max(Math.abs(at.x), Math.abs(at.z)) > ARENA.half - 2;
     e.rig = this.takeRig(); e.ragdoll = false; e.ref = e.ref || {}; e.anim = null;
-    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.8, 0.74, 0.72] : [rand(0.88, 1.08), rand(0.9, 1.08), rand(0.85, 1.0)];
-    e.rig.u.uTint.value.setRGB(...tint); e.rig.u.uHue.value = T.hue || 0;
+    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.62, 0.6, 0.6] : T.bloater ? [1.15, 0.95, 0.7] : T.jumper ? [1.05, 0.8, 0.74] : [rand(0.88, 1.08), rand(0.9, 1.08), rand(0.85, 1.0)];
+    e.rig.u.uTint.value.setRGB(...tint); e.rig.u.uHue.value = 0; e.rig.u.uBloat.value = 0;
     for (const a of Object.values(e.rig.actions)) a.time = rand(0, 3);
     if (T.boss) { const B = e.rig.bones; B.Spine2.scale.set(1.32, 1.12, 1.4); B.Neck.scale.setScalar(0.8); B.LeftArm.scale.setScalar(1.18); B.RightArm.scale.setScalar(1.18); B.LeftUpLeg.scale.set(1.2, 1, 1.2); B.RightUpLeg.scale.set(1.2, 1, 1.2); e.rig.u.uEmber.value = 1; }
-    else if (T.brute) e.rig.bones.Spine2.scale.set(1.18, 1.05, 1.22);
-    else if (T.hue) e.rig.bones.Spine1.scale.set(1.12, 1, 1.25);
+    else if (T.brute) { const B = e.rig.bones; B.Spine2.scale.set(1.3, 1.08, 1.32); B.Neck.scale.setScalar(0.85); B.LeftArm.scale.setScalar(1.22); B.RightArm.scale.setScalar(1.22); B.LeftUpLeg.scale.set(1.15, 1, 1.15); B.RightUpLeg.scale.set(1.15, 1, 1.15); }
+    else if (T.bloater) { const B = e.rig.bones; B.Spine.scale.set(1.5, 1.0, 1.75); B.Spine1.scale.set(1.12, 1, 1.15); B.LeftArm.scale.setScalar(0.92); B.RightArm.scale.setScalar(0.92); B.Neck.scale.setScalar(0.85); }
+    else if (T.jumper) { const B = e.rig.bones; B.Spine2.scale.set(0.86, 1, 0.84); B.LeftUpLeg.scale.set(0.9, 1.06, 0.9); B.RightUpLeg.scale.set(0.9, 1.06, 0.9); B.LeftArm.scale.set(0.9, 1.1, 0.9); B.RightArm.scale.set(0.9, 1.1, 0.9); e.gait.walkMax = 1.5; e.gait.runMin = 0.5; }
+    if (T.crawler) { e.crawl = true; e.crawlRef = false; e.gait.limp = 0; }
+    if (this.special?.tint && !T.boss) e.rig.u.uTint.value.multiply(tmpC.setRGB(...this.special.tint));
+    this.attach(e);
     this.animate(e, 0);
     this.enemies.push(e);
     return e;
@@ -397,8 +402,8 @@ export class Horde {
     const nav = this.navOf(e), F = this.fieldOf(e), c = nav.cellOf(e.pos.x, e.pos.z);
     const fd = F && c >= 0 ? F.dist[c] : 0;
     const progressing = moved > 0.45 * Math.min(1.5, e.scale) || fd < S.fd - 8;
-    const busy = e.attackT >= 0 || e.charge >= 0 || e.stagger > 0 || (T.boss && e.bs !== 'walk');
-    const trying = e.aware && !e.outside && !busy && (dist > Math.max(2.2, T.reach * 0.95) || Math.abs(this.player.pos.y - e.pos.y) > 1.2) && !(T.ranged && dist < 18) && !(e.lured && dist < 3);
+    const busy = e.attackT >= 0 || e.jp > 0 || e.stagger > 0 || (T.boss && e.bs !== 'walk');
+    const trying = e.aware && !e.outside && !busy && (dist > Math.max(2.2, T.reach * 0.95) || Math.abs(this.player.pos.y - e.pos.y) > 1.2) && !(e.lured && dist < 3);
     S.t = 0; S.x = e.pos.x; S.z = e.pos.z; S.fd = fd;
     if (!e.aware && moved < 0.3) { e.wander.set(rand(-28, 28), 0, rand(-28, 28)); return; }
     // wedged inside solid geometry (shoved into the stairs by a charge or a crowd) or standing where its own grid
@@ -497,11 +502,19 @@ export class Horde {
       else if (backCore) { amount *= 2.2; weak = true; }
       else { amount *= part === 'limb' ? 0.4 : 0.28; armor = def.id !== 'melee'; }
       if (e.bs === 'stun') amount *= 1.5;
+    } else if (T.armored && !(this.instaKill && def.id !== 'deadfall')) {
+      // BRUTE: plate everywhere but the legs. Leg hits do bonus damage and build toward a cripple; explosives do extra
+      const A = EN.brute.armor;
+      if (def.id === 'deadfall') { /* DEADFALL ignores plate */ }
+      else if (def.id === 'boom') amount *= A.explosive;
+      else if (pi >= 6) { amount *= EN.brute.legMult; e.legHurt += amount; weak = true; }
+      else { amount *= part === 'head' ? A.head : def.id === 'machete' ? A.melee : part === 'limb' ? A.limb : A.body; armor = true; }
     } else if (this.instaKill && def.id !== 'deadfall') amount = Math.max(amount, e.hp + 1); // REAPER power-up
     e.hp -= amount; e.flash = armor ? 0.35 : 1; e.lastHit = performance.now();
     if (!e.aware) this.wake(e);
     if (pi >= 0 && !armor) e.wound[pi] = Math.min(1, e.wound[pi] + 0.25 + amount / 60);
-    if (armor) { this.hooks.fx.impact(point, dir.clone().negate(), 'metal'); if (Math.random() < 0.5) this.hooks.audio.play('armor'); }
+    if (armor) { this.hooks.fx.impact(point, dir.clone().negate(), 'metal'); if (T.armored) { this.hooks.onArmor?.(point, dir); this.hooks.audio.play('bruteClang', this.spatial(e)); } else if (Math.random() < 0.5) this.hooks.audio.play('armor'); }
+    if (T.armored && !e.crippled && e.legHurt >= EN.brute.crippleAt * e.maxHp) this.cripple(e, point, dir);
     else if (T.hue) this.hooks.fx.ichor(point, dir, big ? 0.6 : 0.35, true);
     else this.hooks.fx.bloodHit(point, dir, big || part === 'head');
     const dist = point.distanceTo(this.player.pos);
@@ -515,7 +528,7 @@ export class Horde {
     const imp = (amount / 30) / T.mass;
     e.kb.addScaledVector(new THREE.Vector3(dir.x, 0, dir.z).normalize(), Math.min(def.knock ? 9 : 6, imp * (def.knock ?? (def.id === 'sg' ? 1.6 : 1.1))));
     e.stagger = Math.max(e.stagger, Math.min(0.55, 0.12 + imp * 0.25));
-    if (e.charge >= 0 && imp > 0.9) this.cancelSpit(e);
+    if (e.jp === 1 && amount > e.maxHp * 0.3) { e.jp = 0; e.jcd = 1.2; } // a heavy hit breaks a Jumper's crouch
     // flinch: torso jerks back, head snaps
     e.flinchV -= imp * 9 * Math.sign(local || 1) * -1;
     if (part === 'head') e.headSnapV -= 14 * Math.min(1.5, imp + 0.4) * -Math.sign(local || 1);
@@ -585,7 +598,7 @@ export class Horde {
     e.stumps.push({ j: jIdx[0], t: 3.0 });
     this.hooks.audio.play('sever');
     if (!e.dead) {
-      if (idxs.some((i) => i >= 6)) { e.crawl = true; e.stagger = Math.max(e.stagger, 0.7); e.attackT = -1; this.cancelSpit(e); }
+      if (idxs.some((i) => i >= 6)) { e.crawl = true; e.stagger = Math.max(e.stagger, 0.7); e.attackT = -1; e.jp = 0; }
       const armsLost = (e.lost & 0b1100) && (e.lost & 0b110000);
       if (armsLost) e.armless = true;
     }
@@ -593,14 +606,14 @@ export class Horde {
   }
   kill(e, point, dir, amount, def, head) {
     e.dead = true; e.deadT = 0;
-    if (e.charge >= 0) this.cancelSpit(e);
+    if (e.jp > 0) e.jp = 0;
     // big headshots pop the head off
     if (head && e.type.sever && e.limbDmg[1] >= SEVER_THR[1] * e.type.sever) this.sever(e, 1, dir);
     // violent kills (shotgun up close, marksman) tear off limbs that were already badly hurt
     if (e.type.sever && (def.id === 'sg' || def.id === 'mr')) {
       for (let pi = 1; pi < 10; pi++) if (e.limbDmg[pi] >= SEVER_THR[pi] * e.type.sever * (pi === 1 ? 0.5 : 0.35)) this.sever(e, pi, dir);
     }
-    if (e.type.ranged) { this.hooks.fx.acidBurst(e.joints[J.chest].clone(), false); this.hooks.audio.play('splash', { gain: 0.6 }); }
+    if (e.type.bloater) e.fuse = EN.bloater.blast.fuse; // bursts a moment after it dies
     if (e.type.boss) {
       for (let i = 0; i < 4; i++) this.hooks.fx.ichor(e.joints[[J.chest, J.head, J.pelvis, J.chest][i]], new THREE.Vector3(rand(-1, 1), 1, rand(-1, 1)), 3);
       this.hooks.audio.play('roar', { gain: 0.8 }); this.hooks.onBossDead?.(e);
@@ -642,13 +655,20 @@ export class Horde {
         if (this.spawnT <= 0 && this.aliveCount() < W.maxAlive) {
           const inner = this.extraSpawns.length > 0 && Math.random() < AREAS.spawnShare; // opened areas have their own spawns
           const spawns = inner ? this.extraSpawns : this.arena.spawns;
-          const sp = spawns[Math.floor(Math.random() * spawns.length)];
-          const brute = this.brutesLeft > 0 && Math.random() < this.brutesLeft / this.toSpawn + 0.05;
+          const sp0 = spawns[Math.floor(Math.random() * spawns.length)];
+          const sp = this.special;
+          const rem = Math.max(1, this.toSpawn);
+          const brute = this.brutesLeft > 0 && this.countOf('brute') < ENEMY_SCHEDULE.brutes.maxAlive && Math.random() < this.brutesLeft / rem + 0.05;
           if (brute) this.brutesLeft--;
-          const j = inner ? 0.5 : 2.5, at = sp.clone().add(new THREE.Vector3(rand(-j, j), 0, rand(-j, j)));
-          let type = brute ? 'brute' : 'runner';
-          if (!brute && this.wave >= SPITTERS.fromWave && this.spittersAlive() < SPITTERS.maxAlive(this.wave) && Math.random() < SPITTERS.baseChance + this.wave * SPITTERS.perWave) type = 'spitter';
-          this.spawn(type, at, type === 'runner' && Math.random() < IDLE_CHANCE);
+          const bloat = !brute && this.bloatersLeft > 0 && this.countOf('bloater') < ENEMY_SCHEDULE.bloaters.maxAlive && Math.random() < this.bloatersLeft / rem + 0.05;
+          if (bloat) this.bloatersLeft--;
+          const j = inner ? 0.5 : 2.5, at = sp0.clone().add(new THREE.Vector3(rand(-j, j), 0, rand(-j, j)));
+          let type = brute ? 'brute' : bloat ? 'bloater' : 'runner';
+          const JS = ENEMY_SCHEDULE.jumpers;
+          if (sp?.type === 'crawler') type = 'crawler';
+          else if (type === 'runner' && this.wave >= JS.from && this.countOf('jumper') < JS.maxAlive(this.wave) && Math.random() < JS.base + this.wave * JS.perWave) type = 'jumper';
+          const e = this.spawn(type, at, type === 'runner' && !sp && Math.random() < IDLE_CHANCE);
+          if (sp && type === 'runner') this.applySpecial(e, sp);
           this.toSpawn--;
           this.spawnT = W.gap * rand(0.5, 1.5);
         }
@@ -667,6 +687,7 @@ export class Horde {
     for (const e of this.enemies) {
       if (e.stumps.length) this.updateStumps(e, dt);
       if (e.dead) {
+        if (e.fuse >= 0) { e.fuse -= dt; if (e.fuse < 0) this.burst(e); }
         e.flash = Math.max(0, e.flash - dt * 9);
         if (e.ragdoll) { this.updateRagdoll(e, dt); if (e.deadT < 3.6) solveFromJoints(e.rig, e.joints, e.ref); }
         else this.updateDeathClip(e, dt);
@@ -724,28 +745,19 @@ export class Horde {
           if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); sep.x += (dx / d) * (rr - d) / rr; sep.z += (dz / d) * (rr - d) / rr; }
         }
       }
-      // spitters hold a firing distance and strafe instead of rushing
-      if (T.ranged && e.aware && !e.outside && !e.crawl && !e.lured && dist < 18) {
-        e.strafeT -= dt; if (e.strafeT <= 0) { e.strafe = -e.strafe; e.strafeT = rand(1.5, 3.5); }
-        perp.set(-toP.z, 0, toP.x).multiplyScalar(e.strafe);
-        if (dist < 8) dir.copy(toP).multiplyScalar(-1).addScaledVector(perp, 0.6);
-        else dir.copy(perp).addScaledVector(toP, dist < 11 ? -0.25 : 0.25);
-        dir.normalize();
-      }
       dir.addScaledVector(sep, 1.6);
       // stop at melee range
       let want = e.aware ? e.speed : e.speed * 0.2;
-      if (e.crawl) want = clamp(e.speed * 0.4, 0.55, 1.2);
+      if (e.crawl) want = T.crawler ? e.speed : clamp(e.speed * 0.4, 0.55, 1.2);
       const reach = e.crawl ? 1.3 : T.reach;
       if (e.aware && dist < reach * 0.75 && Math.abs(dy) < 1.2) want = 0;
       if (e.lured && dist < e.lureR) want = 0;
-      if (T.ranged && e.charge >= 0) want = 0;
-      if (T.ranged && dist < 18 && !e.crawl) want *= 0.75;
       if (e.stagger > 0) { want *= 0.15; e.stagger -= dt; }
       if (e.attackT >= 0) want *= 0.35;
       // brutes charge when close
-      if (e.aware && T.brute && !T.boss && !e.lured && dist < 10 && dist > 3) want *= 1.8;
+      if (e.aware && T.brute && !T.boss && !e.lured && !e.crippled && dist < 10 && dist > 3) want *= EN.brute.charge;
       e.facePlayer = false;
+      if (T.jumper && e.aware && !e.outside && !e.lured && !e.crawl) want = this.jumperBrain(e, dt, dist, dy, toP, dir, want);
       if (T.boss) want = this.bossBrain(e, dt, dist, dy, toP, dir, want);
       const dl = dir.length(); if (dl > 0) dir.divideScalar(Math.max(1, dl));
       // turn toward the steering direction at a limited rate and walk where the body points,
@@ -757,12 +769,12 @@ export class Horde {
       e.yaw += clamp(dyaw, -turn, turn);
       const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
       let mx = dir.x, mz = dir.z;
-      if (!T.ranged || dist > 18) { // strafing spitters are the exception
+      if (e.jp !== 2) {
         const align = clamp(fx * dir.x + fz * dir.z, 0, 1), dlen = Math.hypot(dir.x, dir.z) || 1;
         const k = 0.8; mx = (fx * k + dir.x / dlen * (1 - k)) * (0.2 + 0.8 * align) * Math.min(1, dlen); mz = (fz * k + dir.z / dlen * (1 - k)) * (0.2 + 0.8 * align) * Math.min(1, dlen);
       }
       const acc = e.grounded ? 6 : 1.5;
-      e.vel.x = damp(e.vel.x, mx * want, acc, dt); e.vel.z = damp(e.vel.z, mz * want, acc, dt);
+      if (e.jp !== 2) { e.vel.x = damp(e.vel.x, mx * want, acc, dt); e.vel.z = damp(e.vel.z, mz * want, acc, dt); } // mid-leap: ballistic, no steering
       e.kb.multiplyScalar(Math.exp(-7 * dt));
       e.prePos.copy(e.pos);
       e.pos.x += (e.vel.x + e.kb.x) * dt; e.pos.z += (e.vel.z + e.kb.z) * dt;
@@ -777,7 +789,7 @@ export class Horde {
       e.vy -= 18 * dt; e.pos.y += e.vy * dt;
       if (e.pos.y <= g) { if (!e.grounded && e.vy < -4) e.stagger = 0.15; e.pos.y = g; e.vy = 0; e.grounded = true; } else if (e.pos.y > g + 0.05) e.grounded = false;
       e.leapCd -= dt;
-      if (e.aware && e.grounded && e.navNext >= 0 && e.navDh > 0.6 && e.leapCd <= 0 && !e.crawl) {
+      if (e.aware && e.grounded && e.navNext >= 0 && e.navDh > 0.6 && e.leapCd <= 0 && (!e.crawl || T.crawler) && e.jp === 0) {
         this.navOf(e).center(e.navNext, this._v);
         const hx = this._v.x - e.pos.x, hz = this._v.z - e.pos.z, hd = Math.hypot(hx, hz);
         if (hd < 0.95) { // hop up onto the prop / container
@@ -787,7 +799,7 @@ export class Horde {
           if (e.navDh > 1.5) this.hooks.audio.play('growl', this.spatial(e, { brute: T.brute }));
         }
       }
-      if (e.aware && !e.lured && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.boss && !e.crawl) {
+      if (e.aware && !e.lured && e.grounded && dy > 0.9 && dy < 4 && dist < 4.5 && e.leapCd <= 0 && !T.boss && !e.crawl && e.jp === 0) {
         e.vy = Math.sqrt(2 * 18 * (dy + 0.9)); e.leapCd = 2.2;
         const tt = e.vy / 18 * 1.6; e.vel.copy(toP).multiplyScalar(Math.min(9, dist / tt + 1)); e.grounded = false;
         this.hooks.audio.play('growl', this.spatial(e, { brute: false }));
@@ -801,22 +813,21 @@ export class Horde {
       e.phase += dt * (e.crawl ? (e.speedNow / e.scale) * (Math.PI * 2 / 0.56) + 0.4 : sp * 2.05 / e.scale + 0.5);
       // attack
       e.attackCd -= dt;
-      if (e.aware && e.attackT < 0 && e.attackCd <= 0 && dist < reach && Math.abs(dy) < 1.3 && P.alive && e.charge < 0 && (!T.boss || e.bs === 'walk')) {
+      if (e.aware && e.attackT < 0 && e.attackCd <= 0 && dist < reach && Math.abs(dy) < 1.3 && P.alive && e.jp === 0 && (!T.boss || e.bs === 'walk')) {
         e.attackT = 0; this.hooks.audio.play('growl', this.spatial(e, { brute: T.brute }));
       }
       if (e.attackT >= 0) {
         const before = e.attackT; e.attackT += dt;
         if (before < T.windup && e.attackT >= T.windup) {
           this.hooks.audio.play('swing', this.spatial(e));
-          if (!e.lured && dist < reach + 0.45 && Math.abs(dy) < 1.4 && e.stagger <= 0) this.hooks.onPlayerHit?.(T.dmg * (e.dmgMul ?? 1) * (e.armless ? 0.45 : e.crawl ? 0.7 : 1), e.pos, e);
+          if (!e.lured && dist < reach + 0.45 && Math.abs(dy) < 1.4 && e.stagger <= 0) this.hooks.onPlayerHit?.(T.dmg * (e.dmgMul ?? 1) * (e.armless ? 0.45 : e.crawl && !T.crawler ? 0.7 : 1) * (e.crippled ? EN.brute.crippleDmgMul : 1), e.pos, e);
         }
         if (e.attackT > T.windup + 0.35) { e.attackT = -1; e.attackCd = T.cd * rand(0.8, 1.2); }
       }
-      if (T.ranged && e.aware && !e.outside && !e.lured && P.alive && !e.crawl) this.updateSpit(e, dt, dist);
-      e.spitRecoil = Math.max(0, e.spitRecoil - dt * 3);
+      if (T.bloater) this.bloaterTick(e, dt);
       // ambient voices
       e.growlT -= dt;
-      if (e.growlT <= 0 && this.growlT <= 0) { this.hooks.audio.play('growl', this.spatial(e, { brute: T.brute })); e.growlT = rand(3, 8); this.growlT = 0.35; }
+      if (e.growlT <= 0 && this.growlT <= 0) { this.hooks.audio.play('growl', this.spatial(e, { brute: T.brute })); e.growlT = rand(3, 8) / (this.special?.groan || 1); this.growlT = 0.35; }
       // flinch springs
       e.flinchV += (-e.flinch * 140 - e.flinchV * 14) * dt; e.flinch += e.flinchV * dt;
       e.headSnapV += (-e.headSnap * 160 - e.headSnapV * 12) * dt; e.headSnap += e.headSnapV * dt;
@@ -824,9 +835,7 @@ export class Horde {
       e.flash = Math.max(0, e.flash - dt * 9);
       this.animate(e, dt);
     }
-    this.updateProjectiles(dt);
     this.updateLimbs(dt);
-    this.updatePuddles(dt);
     // recycle burned corpses
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -834,6 +843,7 @@ export class Horde {
     }
     this.syncRigs();
     this.updateBossRig(time);
+    this.updatePlates(time);
   }
   // ---------------------------------------------------------------- boss
   bossBrain(e, dt, dist, dy, toP, dir, want) {
@@ -880,80 +890,232 @@ export class Horde {
     return want;
   }
 
-  // ---------------------------------------------------------------- spitter
+
+  // ---------------------------------------------------------------- M14: special waves, brute, bloater, jumper
+  applySpecial(e, sp) {
+    if (sp.type === 'sprinter') { e.cls = 'sprinter'; e.speed = rand(...sp.speed); }
+  }
+  cripple(e, point, dir) {
+    e.crippled = true; e.speed *= EN.brute.crippleSpeed; e.gait.limp = 0.42; e.gait.cadence = 0.8; e.stagger = Math.max(e.stagger, 0.9); e.attackT = -1;
+    this.hooks.audio.play('cripple', this.spatial(e)); this.hooks.onShake?.(0.15);
+    for (let i = 0; i < 3; i++) this.hooks.onArmor?.(point, dir);
+    this.hooks.onCripple?.(e, point);
+  }
+  // ---- bloater
+  bloaterTick(e, dt) {
+    const B = EN.bloater, f = clamp(e.hp / e.maxHp, 0, 1), rate = lerp(B.pulse[0], B.pulse[1], Math.pow(1 - f, 1.4));
+    e.pulsePh += dt * rate;
+    const k = Math.floor(e.pulsePh);
+    if (k !== e.lastBeat) { e.lastBeat = k; if (!e.dead) this.hooks.audio.play('bloatBeat', this.spatial(e, { k: 1 - f })); }
+    e.beat = 0.3 + 0.7 * Math.pow(0.5 + 0.5 * Math.sin(e.pulsePh * Math.PI * 2 - 1.2), 2);
+    e.flash = Math.max(e.flash, 0.08 + 0.3 * (1 - f) * e.beat);
+  }
+  burst(e) {
+    const c = e.joints[J.pelvis].clone().lerp(e.joints[J.chest], 0.35);
+    this.hooks.onBloaterBurst?.(c, e);
+    e.dissolve = 1;
+  }
+  // ---- jumper
+  clearAbove(e) {
+    const P = this.player;
+    return this.los(vA.set(e.pos.x, e.pos.y + 2.3, e.pos.z), vB.set(P.pos.x, P.pos.y + 1.6, P.pos.z));
+  }
+  // first low obstacle (a car, crate, barrier) along a horizontal ray at knee height: { t, top } or null
+  lowCover(x, y, z, dx, dz, reach, maxTop) {
+    let best = null;
+    for (const c of this.colliders) {
+      if (c.maxY <= y + 0.45 || c.maxY > y + maxTop || c.minY > y + 0.5) continue;
+      const t = rayAABB(x, y + 0.5, z, dx, 0, dz, c, reach, tN);
+      if (t >= 0 && (!best || t < best.t)) best = { t, top: c.maxY, c };
+    }
+    return best;
+  }
+  hopPlan(e, toP) {
+    const J_ = EN.jumper, nav = this.navOf(e), cov = this.lowCover(e.pos.x, e.pos.y, e.pos.z, toP.x, toP.z, J_.hopAhead, J_.hopMaxHeight);
+    if (!cov) return null;
+    for (const dd of [cov.t + 1.0, cov.t + 1.8, cov.t + 2.6, cov.t + 3.4]) {
+      const x = e.pos.x + toP.x * dd, z = e.pos.z + toP.z * dd, c = nav.cellOf(x, z);
+      if (c < 0 || nav.blocked[c] || Math.abs(nav.height[c] - e.pos.y) > 0.8) continue;
+      e.jtgt.set(x, nav.height[c], z); e.jApex = cov.top - e.pos.y + 0.45;
+      return e.jtgt;
+    }
+    return null;
+  }
+  jumperLaunch(e) {
+    const P = this.player, g = 18, J_ = EN.jumper;
+    let tx, ty, tz, apex;
+    if (e.jkind === 'leap') {
+      tx = P.pos.x + P.vel.x * 0.25; ty = P.pos.y; tz = P.pos.z + P.vel.z * 0.25;
+      const dx0 = tx - e.pos.x, dz0 = tz - e.pos.z, dl = Math.hypot(dx0, dz0) || 1;
+      const cov = this.lowCover(e.pos.x, e.pos.y, e.pos.z, dx0 / dl, dz0 / dl, dl, J_.hopMaxHeight);
+      apex = Math.max(0.5, cov ? cov.top - e.pos.y + 0.45 : 0, (ty - e.pos.y) + 0.4);
+    } else { tx = e.jtgt.x; ty = e.jtgt.y; tz = e.jtgt.z; apex = e.jApex; }
+    const dx = tx - e.pos.x, dz = tz - e.pos.z, D = Math.hypot(dx, dz) || 1, dy = ty - e.pos.y;
+    const T0 = e.jkind === 'leap' ? clamp(D / 12, J_.air[0], J_.air[1]) : clamp(D / 5, 0.38, 0.6);
+    let vy = (dy + 0.5 * g * T0 * T0) / T0;
+    if (vy * vy / (2 * g) < apex) vy = Math.sqrt(2 * g * apex);
+    const T = (vy + Math.sqrt(Math.max(0, vy * vy - 2 * g * dy))) / g, vh = D / T;
+    e.vel.set(dx / D * vh, 0, dz / D * vh); e.kb.set(0, 0, 0); e.vy = vy; e.grounded = false; e.jp = 2; e.jt = 0; e.jhit = false; e.yaw = Math.atan2(dx, dz);
+    this.hooks.audio.play(e.jkind === 'leap' ? 'jumperLeap' : 'jumperHop', this.spatial(e));
+    if (e.jkind === 'hop') this.navStats.hops = (this.navStats.hops || 0) + 1; else this.navStats.leaps = (this.navStats.leaps || 0) + 1;
+  }
+  jumperHit(e) {
+    e.jhit = true;
+    this.hooks.onPlayerHit?.(EN.jumper.dmg * (e.dmgMul ?? 1), e.pos, e, { knock: EN.jumper.knock });
+  }
+  jumperBrain(e, dt, dist, dy, toP, dir, want) {
+    const J_ = EN.jumper, P = this.player;
+    e.jcd -= dt; e.hopCd -= dt; e.jt += dt;
+    switch (e.jp) {
+      case 0: {
+        if (!e.grounded || e.stagger > 0 || e.attackT >= 0 || !P.alive) return want;
+        if (e.jcd <= 0 && dist > J_.leapMin && dist < J_.leapMax && Math.abs(dy) < 2.2 && this.clearAbove(e)) {
+          e.jp = 1; e.jt = 0; e.jkind = 'leap'; this.hooks.audio.play('jumperWind', this.spatial(e)); return 0;
+        }
+        if (e.hopCd <= 0 && dist > 2.5 && dist < 20 && e.aware && this.hopPlan(e, toP)) {
+          e.jp = 1; e.jt = 0; e.jkind = 'hop'; return 0;
+        }
+        return want;
+      }
+      case 1: {
+        e.facePlayer = e.jkind === 'leap';
+        if (e.stagger > 0.3) { e.jp = 0; e.jcd = 1; return 0; }
+        if (e.jt >= (e.jkind === 'leap' ? J_.windup : J_.hopWindup)) this.jumperLaunch(e);
+        return 0;
+      }
+      case 2: {
+        e.trailT -= dt;
+        if (e.trailT <= 0) { e.trailT = 0.03; this.hooks.fx.add?.spawn({ pos: e.joints[J.chest].clone(), vel: new THREE.Vector3(rand(-0.3, 0.3), rand(0, 0.4), rand(-0.3, 0.3)), life: 0.42, size: e.jkind === 'leap' ? 0.07 : 0.04, col: e.jkind === 'leap' ? tmpC2.setRGB(3.2, 1.0, 0.25) : tmpC2.setRGB(1.2, 0.8, 0.5), grav: 0, drag: 1.5 }); }
+        if (e.jkind === 'leap' && !e.jhit && dist < 1.15 && Math.abs(dy) < 1.6 && P.alive) this.jumperHit(e);
+        if ((e.grounded && e.jt > 0.12) || e.jt > 1.6) {
+          e.jp = 3; e.jt = 0; e.vel.multiplyScalar(0.2);
+          this.hooks.audio.play('jumperLand', this.spatial(e));
+          if (e.jkind === 'leap') {
+            this.hooks.fx.slam?.(e.pos, 1.5);
+            if (!e.jhit && dist < J_.landRadius && Math.abs(dy) < 1.6 && P.alive) this.jumperHit(e);
+            e.jcd = rand(...J_.cooldown);
+          } else e.hopCd = J_.hopCooldown;
+        }
+        return 0;
+      }
+      default: { // 3: recover
+        if (e.jt >= (e.jkind === 'leap' ? 0.45 : 0.08)) { e.jp = 0; e.jt = 0; }
+        return e.jkind === 'leap' ? 0 : want * 0.5;
+      }
+    }
+  }
+  jumperPose(e) {
+    const B = e.rig.bones, right = tX.set(1, 0, 0).applyQuaternion(e.rig.root.quaternion);
+    const sc = B.Hips.parent.getWorldScale(tS).y || 1;
+    let c = 0, air = 0;
+    if (e.jp === 1) c = clamp(e.jt / (e.jkind === 'leap' ? EN.jumper.windup : EN.jumper.hopWindup), 0, 1);
+    else if (e.jp === 2) air = 1;
+    else if (e.jp === 3) c = clamp(1 - e.jt / 0.45, 0, 1) * 0.7;
+    if (c > 0) {
+      B.Hips.position.y -= 0.42 * c * e.scale / sc;
+      worldRotate(B.Spine1, right, 0.7 * c);
+      worldRotate(B.LeftUpLeg, right, -1.1 * c); worldRotate(B.RightUpLeg, right, -1.1 * c);
+      worldRotate(B.LeftLeg, right, 1.7 * c); worldRotate(B.RightLeg, right, 1.7 * c);
+      worldRotate(B.LeftArm, right, 1.0 * c); worldRotate(B.RightArm, right, 1.0 * c);
+      worldRotate(B.Head, right, -0.4 * c);
+    } else if (air) {
+      worldRotate(B.Spine1, right, 0.35);
+      worldRotate(B.LeftArm, right, -2.3); worldRotate(B.RightArm, right, -2.3);
+      worldRotate(B.LeftUpLeg, right, -0.9); worldRotate(B.RightUpLeg, right, 0.3);
+      worldRotate(B.LeftLeg, right, 1.0); worldRotate(B.RightLeg, right, 0.5);
+    }
+  }
+  // ---- attachments: armour plates on Brutes, glowing sac + warning ring on Bloaters (small pools, no per-zombie allocation)
+  buildPlates(scene) {
+    const steel = new THREE.MeshStandardMaterial({ color: '#3b3836', roughness: 0.42, metalness: 0.9 });
+    const rust = new THREE.MeshStandardMaterial({ color: '#6a4a32', roughness: 0.55, metalness: 0.75 });
+    const strap = new THREE.MeshStandardMaterial({ color: '#1c1a19', roughness: 0.8, metalness: 0.3 });
+    const L = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
+    const rb = (w, h, d, r = 0.02) => new RoundedBoxGeometry(w, h, d, 2, r);
+    const cap = (r) => new THREE.SphereGeometry(r, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    const spike = new THREE.ConeGeometry(0.04, 0.2, 6);
+    const defs = [
+      [rb(0.58, 0.42, 0.15, 0.04), steel, 0, L(0, 0.3, 0.15, -0.1)],   // breastplate
+      [rb(0.5, 0.44, 0.12, 0.04), steel, 0, L(0, 0.3, -0.15, 0.1)],    // back plate
+      [rb(0.5, 0.13, 0.16, 0.03), rust, 0, L(0, 0.07, 0.12, 0.1)],     // belly band
+      [rb(0.6, 0.06, 0.2, 0.02), strap, 0, L(0, 0.2, 0.0)],           // belt strap
+    ];
+    for (const pi of [2, 4]) { defs.push([cap(0.2), steel, pi, L(0, 0.03, 0, 0, 0, 0, 1.2, 1, 1.2)]); for (let k = 0; k < 3; k++) defs.push([spike, rust, pi, L((k - 1) * 0.07, 0.09 + k * 0.03, -0.02 - k * 0.02, -0.6 - k * 0.2, 0, (k - 1) * 0.35)]); }
+    for (const pi of [3, 5]) defs.push([new THREE.CylinderGeometry(0.09, 0.105, 0.22, 10), rust, pi, L(0, 0.13, 0)]);
+    for (const pi of [6, 8]) defs.push([rb(0.21, 0.34, 0.12, 0.03), steel, pi, L(0, 0.2, 0.09), true]);
+    for (const pi of [7, 9]) defs.push([rb(0.16, 0.3, 0.1, 0.025), rust, pi, L(0, 0.2, 0.07), true]);
+    defs.push([cap(0.15), steel, 1, L(0, 0.2, -0.005, 0, 0, 0, 1, 1.05, 1.05)]);       // helm
+    defs.push([rb(0.17, 0.05, 0.05, 0.015), strap, 1, L(0, 0.19, 0.12)]);             // visor slit
+    defs.push([spike, rust, 1, L(0, 0.34, -0.01, 0, 0, 0, 1, 0.9, 1)]);                // crest spike
+    this.plateSets = Array.from({ length: 5 }, () => {
+      const pieces = defs.map(([geo, mat, part, local, leg]) => { const m = new THREE.Mesh(geo, mat); m.matrixAutoUpdate = false; m.frustumCulled = false; m.visible = false; m.castShadow = false; scene.add(m); return { m, part, local, leg: !!leg }; });
+      return { kind: 'brute', pieces, owner: null };
+    });
+    // bloater: a swollen glowing sac on the belly + a halo, plus a blast-radius ring on the ground
+    const sacG = new THREE.SphereGeometry(0.25, 18, 14), haloG = new THREE.SphereGeometry(0.42, 16, 12), ringG = new THREE.RingGeometry(0.94, 1, 56).rotateX(-Math.PI / 2);
+    this.bloatSets = Array.from({ length: 4 }, () => {
+      const sacM = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.5, 0.3), transparent: true, opacity: 0.8, toneMapped: false });
+      const haloM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.7, 0.12), transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+      const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.1, 0.2), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+      const sac = new THREE.Mesh(sacG, sacM), halo = new THREE.Mesh(haloG, haloM), ring = new THREE.Mesh(ringG, ringM);
+      for (const m of [sac, halo]) { m.matrixAutoUpdate = false; m.frustumCulled = false; m.visible = false; scene.add(m); }
+      ring.frustumCulled = false; ring.visible = false; ring.renderOrder = 5; scene.add(ring);
+      return { kind: 'bloater', sac, halo, ring, sacM, haloM, ringM, owner: null, m: new THREE.Matrix4() };
+    });
+  }
+  attach(e) {
+    const T = e.type;
+    if (T.boss) return;
+    const pool = T.brute ? this.plateSets : T.bloater ? this.bloatSets : null;
+    if (!pool) return;
+    const set = pool.find((q) => !q.owner);
+    if (set) { set.owner = e; e.att = set; }
+  }
+  detach(e) {
+    const set = e.att; if (!set) return;
+    set.owner = null; e.att = null;
+    if (set.kind === 'brute') for (const p of set.pieces) p.m.visible = false;
+    else { set.sac.visible = set.halo.visible = set.ring.visible = false; }
+  }
+  updatePlates(time) {
+    const R = this._pm || (this._pm = new THREE.Matrix4());
+    for (const set of this.plateSets) {
+      const e = set.owner;
+      if (!e) continue;
+      const vis = e.rig && (!e.dead || e.dissolve < 0.15);
+      for (const p of set.pieces) {
+        p.m.visible = vis && !(p.leg && e.crippled);
+        if (!p.m.visible) continue;
+        const P = this.parts[p.part];
+        this.partBasis(e, e.joints[P.a], e.joints[P.b], e.scale, R);
+        p.m.matrix.multiplyMatrices(R, p.local); p.m.matrixWorldNeedsUpdate = true;
+      }
+    }
+    const BL = EN.bloater;
+    for (const set of this.bloatSets) {
+      const e = set.owner;
+      if (!e) continue;
+      const vis = e.rig && (!e.dead || e.fuse >= 0) && e.dissolve < 0.15, f = clamp(e.hp / e.maxHp, 0, 1);
+      set.sac.visible = set.halo.visible = vis;
+      set.ring.visible = vis && f < BL.warnAt;
+      if (!vis) continue;
+      const P = this.parts[0], beat = e.dead ? 1 : e.beat;
+      this.partBasis(e, e.joints[P.a], e.joints[P.b], e.scale, R);
+      set.sac.matrix.multiplyMatrices(R, tmpM.makeTranslation(0, 0.12, 0.13).scale(tS.set(1.05 + 0.1 * beat, 1.0 + 0.1 * beat, 0.9 + 0.12 * beat)));
+      set.halo.matrix.multiplyMatrices(R, tmpM.makeTranslation(0, 0.12, 0.1).scale(tS.setScalar(0.9 + 0.35 * beat)));
+      set.sac.matrixWorldNeedsUpdate = set.halo.matrixWorldNeedsUpdate = true;
+      set.sacM.color.setRGB(2.2 + 2.4 * beat, 1.0 + 0.9 * beat, 0.2 + 0.1 * beat);
+      set.haloM.opacity = 0.12 + 0.28 * beat;
+      if (set.ring.visible) { set.ring.position.set(e.pos.x, e.pos.y + 0.06, e.pos.z); set.ring.scale.setScalar(BL.blast.radius); set.ringM.opacity = (0.25 + 0.5 * beat) * clamp((BL.warnAt - f) / 0.2 + 0.4, 0, 1); }
+    }
+  }
+
+  // ---------------------------------------------------------------- line of sight
   los(a, b) {
     const d = tA.copy(b).sub(a); const L = d.length(); d.divideScalar(L || 1);
     for (const c of this.colliders) if (rayAABB(a.x, a.y, a.z, d.x, d.y, d.z, c, L, tN) >= 0) return false;
     return true;
   }
-  mouth(e, out) { return out.copy(e.joints[J.head]).add(tB.set(Math.sin(e.yaw), 0, Math.cos(e.yaw)).multiplyScalar(0.16 * e.scale)); }
-  updateSpit(e, dt, dist) {
-    const P = this.player;
-    e.spitCd -= dt;
-    if (e.charge < 0) {
-      if (e.spitCd > 0 || e.attackT >= 0 || e.stagger > 0) return;
-      if (dist > 3.5 && dist < 28 && this.los(e.joints[J.head], tC.copy(P.pos).setY(P.pos.y + 1.2))) {
-        const pr = this.proj.find((q) => q.state === 'free');
-        if (!pr) { e.spitCd = 0.5; return; }
-        e.charge = 0; e.orb = pr; pr.state = 'hold'; pr.mesh.visible = true; pr.mesh.scale.setScalar(0.01);
-        this.hooks.audio.play('spitCharge', this.spatial(e));
-      } else e.spitCd = 0.4;
-      return;
-    }
-    e.charge += dt; e.facePlayer = true;
-    const k = Math.min(1, e.charge / SPIT_CHARGE);
-    const pr = e.orb; this.mouth(e, pr.mesh.position); pr.mesh.scale.setScalar(0.03 + 0.1 * k * (0.9 + 0.1 * Math.sin(e.charge * 40)));
-    if (k < 1) return;
-    // launch a lobbed glob at where the player is heading (half lead, so strafing dodges it)
-    const start = pr.mesh.position, tgt = tC.copy(P.pos);
-    tgt.y += 1.0;
-    const T = clamp(dist / 13, 0.6, 1.45);
-    tgt.x += P.vel.x * T * 0.5; tgt.z += P.vel.z * T * 0.5;
-    pr.vel.copy(tgt).sub(start).divideScalar(T); pr.vel.y += 0.5 * SPIT_G * T;
-    pr.state = 'fly'; pr.life = 3; pr.trailT = 0; pr.mesh.scale.setScalar(0.11);
-    e.orb = null; e.charge = -1; e.spitCd = rand(2.6, 3.8); e.spitRecoil = 1;
-    this.hooks.audio.play('spit', this.spatial(e));
-  }
-  cancelSpit(e) {
-    if (e.orb) { e.orb.state = 'free'; e.orb.mesh.visible = false; e.orb = null; }
-    e.charge = -1; e.spitCd = Math.max(e.spitCd, 1.2);
-  }
-  updateProjectiles(dt) {
-    const P = this.player;
-    for (const pr of this.proj) {
-      if (pr.state !== 'fly') continue;
-      const p = pr.mesh.position;
-      pr.vel.y -= SPIT_G * dt; p.addScaledVector(pr.vel, dt); pr.life -= dt;
-      pr.trailT -= dt; if (pr.trailT <= 0) { this.hooks.fx.acidTrail(p); pr.trailT = 0.03; }
-      // player capsule
-      const cy = clamp(p.y, P.pos.y + 0.3, P.pos.y + 1.5);
-      if (Math.hypot(p.x - P.pos.x, p.y - cy, p.z - P.pos.z) < 0.55) { this.explode(pr, p, true); continue; }
-      const g = this.groundAt(p.x, p.z, p.y, 0);
-      if (p.y <= g + 0.05) { p.y = g; this.explode(pr, p, false, true); continue; }
-      let wall = false;
-      for (const c of this.colliders) if (p.x > c.minX && p.x < c.maxX && p.z > c.minZ && p.z < c.maxZ && p.y > c.minY && p.y < c.maxY) { wall = true; break; }
-      if (wall || pr.life <= 0 || p.y < -5) this.explode(pr, p, false, false);
-    }
-  }
-  explode(pr, at, direct, ground) {
-    const P = this.player, pt = at.clone();
-    pr.state = 'free'; pr.mesh.visible = false;
-    const idx = this.hooks.fx.acidBurst(pt, !!ground);
-    if (ground) this.puddles.push({ pos: pt, t: 4.5, idx });
-    const d = Math.hypot(pt.x - P.pos.x, pt.z - P.pos.z, Math.max(0, Math.abs(pt.y - (P.pos.y + 0.9)) - 0.8));
-    const dd = Math.hypot(pt.x - P.pos.x, pt.z - P.pos.z);
-    this.hooks.audio.play('splash', { gain: clamp(10 / (dd + 4), 0.15, 1) });
-    if (direct || d < 2.6) this.hooks.onAcid?.(direct ? 28 : 24 * (1 - d / 2.6) + 6, pt);
-  }
-  updatePuddles(dt) {
-    const P = this.player;
-    for (let i = this.puddles.length - 1; i >= 0; i--) {
-      const q = this.puddles[i]; q.t -= dt;
-      if (q.t <= 0) { if (q.idx !== undefined) this.hooks.fx.acid.hide(q.idx); this.puddles.splice(i, 1); continue; }
-      if (P.grounded && Math.hypot(P.pos.x - q.pos.x, P.pos.z - q.pos.z) < 1.2 && Math.abs(P.pos.y - q.pos.y) < 0.5) this.hooks.onAcid?.(11 * dt, q.pos, true);
-    }
-  }
-
   // ---------------------------------------------------------------- severed limbs
   updateStumps(e, dt) {
     for (let i = e.stumps.length - 1; i >= 0; i--) {
@@ -996,7 +1158,8 @@ export class Horde {
   spatial(e, o = {}) {
     const P = this.player, dx = e.pos.x - P.pos.x, dz = e.pos.z - P.pos.z, d = Math.hypot(dx, dz);
     const rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
-    return { ...o, pan: clamp((dx * rx + dz * rz) / (d + 1), -0.9, 0.9), gain: clamp(10 / (d + 4), 0.06, 1) };
+    const gk = this.special?.groan || 1;
+    return { ...o, pan: clamp((dx * rx + dz * rz) / (d + 1), -0.9, 0.9), gain: clamp(10 * gk / (d + 4), 0.06, Math.min(1.5, gk)) };
   }
 
   // legless: dragging itself along on its arms
@@ -1089,7 +1252,6 @@ export class Horde {
     // one-shot / state clips
     let clip = null, ts = 1, start = 0;
     if (e.attackT >= 0) { clip = e.attackSide ? 'attack2' : 'attack'; ts = 2.0 / (T.windup + 0.35) * (T.boss ? 0.8 : 1); start = 0.9; }
-    else if (e.charge >= 0) { clip = 'scream'; ts = 1.6; start = 0.4; }
     else if (T.boss && e.bs === 'chargeWind') { clip = 'scream'; ts = 1.4; start = 0.4; }
     else if (T.boss && e.bs === 'slamWind') { clip = 'attack2'; ts = 1.25; start = 0.9; }
     else if (T.boss && e.bs === 'stun') { clip = 'hit'; ts = 0.8; }
@@ -1118,8 +1280,9 @@ export class Horde {
     if (B.Spine) B.Spine.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), clamp(e.flinch, -0.9, 0.9) * 0.8));
     if (B.Spine1) B.Spine1.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(0, 1, 0), clamp(e.twist, -0.8, 0.8)));
     if (B.Head) B.Head.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), clamp(e.headSnap, -1, 1) * 0.9));
-    if (e.spitRecoil > 0 && B.Spine1) B.Spine1.quaternion.multiply(tmpQ.setFromAxisAngle(tX.set(1, 0, 0), 0.5 * e.spitRecoil));
     for (let pi = 1; pi < 10; pi++) if (e.lost & (1 << pi)) B[PART_BONE[pi]].scale.setScalar(0.0001);
+    if (T.jumper && e.jp > 0) this.jumperPose(e);
+    if (e.crippled && B.Hips) { const sc = B.Hips.parent.getWorldScale(tS).y || 1; B.Hips.position.y -= 0.1 * e.scale / sc; worldRotate(B.Spine1, tX.set(1, 0, 0).applyQuaternion(R.root.quaternion), 0.18); }
     R.root.updateMatrixWorld(true);
     readJoints(R, e.joints, e.scale);
   }
@@ -1154,6 +1317,7 @@ export class Horde {
     if ((T.boss || T.brute) && B.Hips) { const sc = B.Hips.parent.getWorldScale(tS).y || 1; B.Hips.position.y -= (T.boss ? 0.045 : 0.025) * e.scale * step * moving / sc; }
     // footfall thumps for the boss
     if (T.boss) { const k = Math.floor(ph * 2); if (k !== e.lastStep) { e.lastStep = k; if (moving > 0.5) { this.hooks.onShake?.(0.05); } } }
+    else if (T.brute) { const k = Math.floor(ph * 2); if (k !== e.lastStep) { e.lastStep = k; if (moving > 0.5) { this.hooks.audio.play('bruteStep', this.spatial(e)); if (e.pos.distanceTo(this.player.pos) < 9) this.hooks.onShake?.(0.03); } } }
   }
   // crawlers: reference pose = the bind pose mapped through the procedural crawl joints
   crawlBase(e) {
@@ -1179,7 +1343,7 @@ export class Horde {
     for (const e of this.enemies) {
       const R = e.rig; if (!R) continue;
       R.u.uFlash.value = e.flash; R.u.uDiss.value = e.dissolve * 1.05;
-      R.u.uGlow.value = e.charge >= 0 ? 1 + 3 * Math.min(1, e.charge / SPIT_CHARGE) : 0.6;
+      R.u.uGlow.value = 0.6; R.u.uBloat.value = e.type.bloater ? e.beat : 0;
       for (let i = 0; i < 10; i++) R.u.uWound.value[i] = e.wound[i];
       // corpses stop casting shadows once they start rotting away
       if (e.dead && e.dissolve > 0.3 && R.meshes[0].castShadow) for (const m of R.meshes) m.castShadow = false;

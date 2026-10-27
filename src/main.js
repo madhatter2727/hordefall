@@ -21,7 +21,7 @@ import { loadAssets } from './assets.js';
 import { PERKS, PERK, dealPerks, SHOP } from './perks.js';
 import { WEAPONS } from './weapons/defs.js';
 import { PowerUps, POWER_TYPES, powerIconURL } from './powerups.js';
-import { POWERUPS, FEEDBACK, BOSS_HIT, CRATE, FORGE, DRINKS } from './tuning.js';
+import { POWERUPS, FEEDBACK, BOSS_HIT, CRATE, FORGE, DRINKS, ENEMIES as EN, SPECIAL } from './tuning.js';
 import { Areas } from './world/areas.js';
 import { Nightfall } from './world/nightfall.js';
 
@@ -136,14 +136,16 @@ class Game {
     this.blade = new MacheteVM(this.vmCamera, this.arsenal.models.materials);
     this.horde = new Horde(scene, this.arena, {
       assets, player: this.player, fx: this.fx, audio: this.audio,
-      onPlayerHit: (dmg, from, e) => this.onPlayerHit(dmg, from, e),
+      onPlayerHit: (dmg, from, e, o) => this.onPlayerHit(dmg, from, e, o),
       onKill: (e, info) => this.onKill(e, info),
       onBlastHit: (e, dmg, res, point) => this.onHit({ e, part: 'body', point }, dmg, res, true),
-      onWaveStart: (n, count, boss) => (this.powerups?.newWave(n), boss) ? this.banner(`BOSS WAVE ${n}`, 'Something big is coming', 'boss') : this.banner(`WAVE ${n}`, `${count} hostiles inbound`),
+      onWaveStart: (n, count, boss, sp) => this.onWaveStart(n, count, boss, sp),
       onBoss: (e) => { this.banner('THE COLOSSUS', 'Armored. Hit the glowing head and back core', 'boss'); this.shake(0.4); $('bossbar').classList.add('on'); },
       onBossDead: () => { this.banner('COLOSSUS DOWN', '+3000', 'boss'); this.shake(0.8); this.hitstop = 0.25; $('bossbar').classList.remove('on'); },
       onShake: (a) => this.shake(a),
-      onAcid: (dmg, from, tick) => this.onAcid(dmg, from, tick),
+      onArmor: (p, dir) => this.spark(p, 0xffc070, 7),
+      onCripple: (e) => this.feed('<b>BRUTE CRIPPLED</b>', 60),
+      onBloaterBurst: (p, e) => this.bloaterBurst(p, e),
       onSever: (e, name) => { if (this.blasting) return; if (!e.dead || name === 'head') this.feed(name === 'head' ? '<b>DECAPITATED</b>' : '<b>DISMEMBERED</b>', 25); this.addScore(25); },
       onWaveEnd: (n) => this.onWaveEnd(n),
     });
@@ -249,7 +251,7 @@ class Game {
     this.player.reset(); this.arsenal.resetAll(); this.horde.reset(); this.fx.clear();
     this.score = 0; this.pts = 0; this.kills = 0; this.headshots = 0; this.shotsFired = 0; this.shotsHit = 0; this.deadT = 0; this.runTime = 0;
     this.perks = {}; this.drinksOwned = {}; this.shopT = 0; this.applyPerks(); this.renderPerkRow(); this.barrels.respawn(); this.throwables.reset(); this.blade.reset(); this.powerups.reset(); this.stations.reset(); this.drinks.reset(); this.areas.reset(); this.nightfall.snap(1); this.immuneT = 0; this.renderDrinks(); this.power.bounty = this.power.reaper = 0; this.horde.instaKill = false; this.slowT = 0; this.audio.pitch = 1; this.renderPowers(); this.arsenal.bladeOut = false;
-    this.damageFx = 0; this.acidFx = 0; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
+    this.damageFx = 0; this.minHpFrac = 1; this.gaspUsed = false; this.specialLive = null; this.screenBlood = 0; this.hudDirty = true; $('bossbar').classList.remove('on');
     this.horde.start();
     this.state = 'play';
     if (!fromMenu) this.input.lock();
@@ -270,10 +272,26 @@ class Game {
   areaLayoutChanged() {
     this.horde.rebuildNav(); this.horde.extraSpawns = this.areas.openSpawns(); this.minimap?.rebake();
   }
-  banner(title, sub, cls = '') {
+  banner(title, sub, cls = '', color = '') {
     const b = $('banner'); $('banner-t').textContent = title; $('banner-s').textContent = sub;
-    b.classList.remove('on', 'boss', 'crate'); void b.offsetWidth; b.classList.add('on'); if (cls) b.classList.add(cls);
+    b.classList.remove('on', 'boss', 'crate', 'area', 'special'); if (color) b.style.setProperty('--sc', color); void b.offsetWidth; b.classList.add('on'); if (cls) b.classList.add(cls);
     if (title.startsWith('WAVE') && !title.includes('CLEARED')) this.audio.play('waveStart');
+  }
+  // M14: wave start (special waves get their own banner, siren and colour)
+  onWaveStart(n, count, boss, sp) {
+    this.powerups?.newWave(n, sp?.drops || 0);
+    this.minHpFrac = 1; this.gaspUsed = false; this.specialLive = sp || null;
+    if (boss) return this.banner(`BOSS WAVE ${n}`, 'Something big is coming', 'boss');
+    if (sp) { this.banner(sp.name, `${sp.sub} · ${count} inbound`, 'special', sp.color); this.audio.play('special'); this.shake(0.25); this.hudDirty = true; return; }
+    this.banner(`WAVE ${n}`, `${count} hostiles inbound`);
+  }
+  // M14: a Bloater popped. Blast the husks (and you, if too close), splash gore
+  bloaterBurst(p, e) {
+    const B = EN.bloater.blast;
+    this.audio.play('bloaterBurst', { gain: clamp(16 / (this.camera.position.distanceTo(p) + 5), 0.3, 1) });
+    this.fx.gib?.(p, new THREE.Vector3(0, 1, 0), 12, this.horde.groundAt(p.x, p.z, p.y));
+    this.explode(p, B.radius / 6.5, { radius: B.radius, dmg: B.zombieDmg, pmax: B.playerDmg, noFx: false });
+    this.bloaterBlasts = (this.bloaterBlasts || 0) + 1;
   }
   shake(a) { this.trauma = Math.min(1, this.trauma + a); }
 
@@ -290,7 +308,7 @@ class Game {
     const P = this.player, pd = P.pos.clone().setY(P.pos.y + 0.9).distanceTo(p);
     if (!opts.noSelf && pd < R && P.alive) {
       const f = 1 - pd / R;
-      this.onPlayerHit(Math.round(70 * f * f + 8 * f) + (opts.inHand ? 15 : 0), p, null, { knock: 9 * f, blast: true });
+      this.onPlayerHit(opts.pmax ? Math.round(opts.pmax * (0.35 + 0.65 * f)) : Math.round(70 * f * f + 8 * f) + (opts.inHand ? 15 : 0), p, null, { knock: 9 * f, blast: true });
     }
     this.shake(clamp(1.15 * k * (1 - d / 30), 0.05, 1));
     if (d < 14 && k >= 0.8) this.hitstop = Math.max(this.hitstop, 0.06);
@@ -310,6 +328,7 @@ class Game {
   // LAST GASP TONIC: a killing blow puts you back on your feet once
   secondWind() {
     if (!this.drinksOwned.lastgasp) return false;
+    this.gaspUsed = true;
     const R = DRINKS.list.find((d) => d.id === 'lastgasp').revive, P = this.player;
     delete this.drinksOwned.lastgasp; this.renderDrinks();
     P.health = R.hp; this.immuneT = R.immune;
@@ -339,10 +358,21 @@ class Game {
   }
   onWaveEnd(n) {
     this.banner(`WAVE ${n} CLEARED`, `+${250 * n} · Intermission`);
+    const sp = this.specialLive; this.specialLive = null;
+    if (sp) this.specialCleared(sp);
     this.audio.play('waveEnd'); this.addScore(250 * n); this.throwables.refillWave(); this.hudDirty = true;
     this.barrels.respawn(this.player.pos);
     this.onWaveCleared?.(n);
     this.shopT = 2.6; // let the banner land, then open the shop
+  }
+  specialCleared(sp) {
+    const S = SPECIAL.bonus, s = sp.index, flawless = this.minHpFrac > S.flawlessHp && !this.gaspUsed && this.player.alive;
+    const pts = Math.round(S.clear * (1 + 0.25 * s)), fl = flawless ? Math.round(S.flawless * (1 + 0.25 * s)) : 0;
+    this.addScore(pts + fl);
+    this.feed(`<b>${sp.name} CLEARED</b> +${pts}${flawless ? ` · FLAWLESS +${fl}` : ''}`, 0);
+    const P = this.player, ang = P.yaw + Math.PI;
+    const types = ['bounty', 'resupply', 'reaper', 'deadfall'], type = types[Math.floor(Math.random() * types.length)];
+    for (let i = 0; i < S.reward; i++) { const q = this.walkableNear(P.pos.clone().add(new THREE.Vector3(Math.sin(ang) * 2.5, 0, Math.cos(ang) * 2.5))); this.powerups.spawn(type, q.x, q.z, q.y); }
   }
   openShop() {
     this.state = 'shop';
@@ -737,22 +767,6 @@ class Game {
     s.life = FEEDBACK.dmgNumLife; s.pos.set(p.x + rand(-0.15, 0.15), p.y + 0.1, p.z + rand(-0.15, 0.15));
     s.el.textContent = v; s.el.className = 'dn on' + (head ? ' head' : '') + (kill ? ' kill' : '');
   }
-  onAcid(dmg, from, tick) {
-    if (!this.player.alive) return;
-    this.player.hurt(dmg);
-    this.acidFx = Math.min(1, (this.acidFx || 0) + (tick ? dmg / 12 : 0.55 + dmg / 40));
-    if (tick) { if (this.player.alive) return; this.onDeath(); return; }
-    this.audio.play('hurt'); this.shake(0.2 + dmg / 90);
-    this.arsenal.camKick.impulse(rand(-4, 4), rand(-5, 5), rand(-6, 6));
-    const away = this.player.pos.clone().sub(from); away.y = 0;
-    if (away.lengthSq() > 0.01) {
-      away.normalize();
-      const ang = Math.atan2(away.x, away.z) - this.player.yaw;
-      const di = $('dmgdir'); di.style.transform = `translate(-50%,-50%) rotate(${-ang + Math.PI}rad)`;
-      di.classList.remove('on'); void di.offsetWidth; di.classList.add('on');
-    }
-    if (!this.player.alive) this.onDeath();
-  }
   onPlayerHit(dmg, from, e, opts = {}) {
     if (!this.player.alive) return;
     if (this.immuneT > 0) return;
@@ -942,6 +956,7 @@ class Game {
     }
     // lights
     this.nightfall.update(dt, this.horde.wave || 1);
+    if (this.state === 'play') this.minHpFrac = Math.min(this.minHpFrac ?? 1, this.player.health / this.player.maxHealth);
     this.arena.lights.forEach((L, i) => { const fl = L.flicker + (i % 2 ? this.lampFlick : 0), hum = Math.sin(this.time * 17 + L.base + i) * Math.sin(this.time * 7.3 + L.base * 3 + i * 1.7); L.light.intensity = L.base * this.lampMul * (1 - fl + fl * (0.6 + 0.4 * hum)) * (i % 2 && this.lampFlick > 0.05 && Math.sin(this.time * 2.1 + i) > 0.97 ? 0.25 : 1); });
     this.sky.material.uniforms.time.value = this.time;
     this.updateViewmodelLights();
@@ -953,7 +968,6 @@ class Game {
     u.lowHealth.value = p.alive ? clamp((45 - p.health) / 45, 0, 1) : 1;
     u.dead.value = this.state === 'dead' ? clamp(this.deadT / 1.5, 0, 1) : 0;
     u.flash.value = Math.max(0, A.flashT / 0.05);
-    this.acidFx = Math.max(0, (this.acidFx || 0) - dt * 0.7); u.acid.value = this.acidFx;
     this.screenBlood = Math.max(0, (this.screenBlood || 0) - dt * 0.55); u.blood.value = this.screenBlood;
 
     this.updateHUD(raw, ads);
@@ -1033,6 +1047,7 @@ class Game {
     $('armorrow').classList.toggle('on', p.armor > 0); $('armorfill').style.width = `${Math.min(100, (p.armor / 150) * 100)}%`;
     $('hpfill').classList.toggle('low', p.health < 35);
     $('wave').textContent = this.horde.wave || '—';
+    { const sp = this.specialLive, c = sp ? sp.color : ''; const w = $('wave'); if (w.style.color !== c) { w.style.color = c; w.style.textShadow = sp ? `0 0 12px ${c}` : ''; } }
     $('left').textContent = this.horde.remaining();
     const boss = this.horde.boss;
     if (boss && !boss.dead) { $('bossfill').style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100).toFixed(1)}%`; $('bossbar').classList.toggle('stun', boss.bs === 'stun'); }
@@ -1074,6 +1089,8 @@ window.__debug = {
   boom(i) { const b = game.barrels.list[i]; game.barrels.damage(b, 999); },
   clearWave() { const H = game.horde; H.toSpawn = 0; H.bossDelay = 0; for (const e of H.enemies) if (!e.dead) { e.hp = 0; H.kill(e, e.pos.clone(), new THREE.Vector3(0, 0, 1), 50, { id: 'ar' }, false); } },
   info() { const A = game.arsenal; return { state: game.state, weapon: A.def.id, mag: A.current.mag, ads: A.ads, fps: game.fps, cpuMs: game.cpuMs, hp: game.player.health, wave: game.horde.wave, alive: game.horde.aliveCount(), idle: game.horde.enemies.filter((e) => !e.dead && !e.aware).length, kills: game.kills, pos: game.player.pos.toArray() }; },
+  wave(n) { const H = game.horde; H.wave = n - 1; H.toSpawn = 0; H.bossDelay = 0; for (const e of H.enemies) if (!e.dead) { e.hp = 0; H.kill(e, e.pos.clone(), new THREE.Vector3(0, 0, 1), 50, { id: 'ar' }, false); } H.cleared = false; H.hold = false; H.nextWave(); return { wave: H.wave, special: H.special?.type || null, count: H.toSpawn, hpMul: +H.W.hp.toFixed(2), gap: +H.W.gap.toFixed(2), maxAlive: H.W.maxAlive, brutes: H.brutesLeft, bloaters: H.bloatersLeft }; },
+  special() { const H = game.horde; return { type: H.special?.type || null, live: !!game.specialLive, minHp: +game.minHpFrac.toFixed(2), lampMul: +game.lampMul.toFixed(3), fog: +game.scene.fog.density.toFixed(4), pts: game.pts }; },
   spawn(n, dist, idle, type, ang) { return game.horde.debugSpawn(n, dist, idle, type ?? null, ang ?? null).length; },
   boss(dist = 16) { game.horde.wave = 4; game.horde.toSpawn = 0; game.horde.nextWave(); game.horde.bossDelay = 0; game.horde.toSpawn = 0; game.horde.debugSpawn(1, dist, false, 'boss', game.player.yaw + Math.PI); },
   bossInfo() { const b = game.horde.boss; return b ? { hp: Math.round(b.hp), max: Math.round(b.maxHp), bs: b.bs, dead: b.dead } : null; },

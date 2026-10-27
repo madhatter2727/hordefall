@@ -34,7 +34,7 @@ const ZOMBIE_SHADER = (u) => (sh) => {
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPart = partId; vLocal = position * 9.0;');
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>
-      uniform float uFlash, uDiss, uHue, uGlow, uEmber, uWound[10], uSeed; uniform vec3 uTint, uShirt, uPants;
+      uniform float uFlash, uDiss, uHue, uGlow, uEmber, uBloat, uWound[10], uSeed; uniform vec3 uTint, uShirt, uPants;
       varying float vPart; varying vec3 vLocal;
       float zh(vec3 p){ return fract(sin(dot(p, vec3(17.1, 113.7, 51.3))) * 43758.5453); }
       float zn(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -86,6 +86,7 @@ const ZOMBIE_SHADER = (u) => (sh) => {
       totalEmissiveRadiance += vec3(0.35, 1.0, 0.12) * uHue * uGlow * smoothstep(0.62, 0.8, zn(vLocal * 1.3 + 2.0));
       float crack = smoothstep(0.47, 0.5, zn(vLocal * 0.9 + 11.0)) * smoothstep(0.53, 0.5, zn(vLocal * 0.9 + 11.0));
       totalEmissiveRadiance += vec3(2.4, 0.7, 0.15) * uEmber * crack * (1.0 - wound);
+      totalEmissiveRadiance += vec3(1.0, 0.62, 0.12) * uBloat * (0.35 + 0.65 * smoothstep(0.25, 0.7, zn(vLocal * 1.1 + 5.0)));
       { // hit flash: hot rim + a faint body glow, so a struck husk pops without turning into a white mannequin
         float fres = pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 2.0);
         totalEmissiveRadiance += vec3(1.0, 0.42, 0.22) * uFlash * (0.06 + fres * 0.5);
@@ -123,7 +124,7 @@ export class ZombieFactory {
   make() {
     const root = skClone(this.template);
     const R = { root, bones: {}, meshes: [], mats: [], u: null, mixer: new THREE.AnimationMixer(root), actions: {}, cur: null, stumps: [] };
-    const u = (R.u = { uFlash: { value: 0 }, uDiss: { value: 0 }, uHue: { value: 0 }, uGlow: { value: 0 }, uEmber: { value: 0 }, uWound: { value: new Array(10).fill(0) }, uSeed: { value: Math.random() * 50 }, uTint: { value: new THREE.Color(1, 1, 1) }, uShirt: { value: new THREE.Color() }, uPants: { value: new THREE.Color() } });
+    const u = (R.u = { uFlash: { value: 0 }, uDiss: { value: 0 }, uHue: { value: 0 }, uGlow: { value: 0 }, uEmber: { value: 0 }, uBloat: { value: 0 }, uWound: { value: new Array(10).fill(0) }, uSeed: { value: Math.random() * 50 }, uTint: { value: new THREE.Color(1, 1, 1) }, uShirt: { value: new THREE.Color() }, uPants: { value: new THREE.Color() } });
     const SH = [[0.3, 0.28, 0.25], [0.18, 0.21, 0.24], [0.28, 0.2, 0.15], [0.16, 0.19, 0.15], [0.32, 0.3, 0.27], [0.24, 0.08, 0.07], [0.1, 0.1, 0.11]], PA = [[0.08, 0.1, 0.15], [0.14, 0.13, 0.11], [0.07, 0.07, 0.07], [0.16, 0.14, 0.1], [0.1, 0.12, 0.16]];
     u.uShirt.value.setRGB(...SH[Math.floor(Math.random() * SH.length)]); u.uPants.value.setRGB(...PA[Math.floor(Math.random() * PA.length)]);
     root.traverse((o) => {
@@ -157,7 +158,7 @@ export function resetRig(R) {
   R.mixer.stopAllAction(); R.cur = null; R.manual = false; R.w = null;
   for (const s of R.stumps) s.parent?.remove(s);
   R.stumps.length = 0;
-  R.u.uWound.value.fill(0); R.u.uEmber.value = 0; R.u.uDiss.value = 0; R.u.uFlash.value = 0; R.u.uHue.value = 0;
+  R.u.uWound.value.fill(0); R.u.uEmber.value = 0; R.u.uBloat.value = 0; R.u.uDiss.value = 0; R.u.uFlash.value = 0; R.u.uHue.value = 0;
 }
 // crossfade to a named clip
 export function play(R, name, fade = 0.2, timeScale = 1, restart = false) {

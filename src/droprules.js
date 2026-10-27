@@ -4,8 +4,9 @@ import { POWERUPS as P } from './tuning.js';
 export function dropChance(wave) { const C = P.chance; return Math.min(C.max, C.base + C.perWave * Math.max(0, wave - 1)); }
 export function shouldDrop(st, wave, total, isLast, rnd = Math.random) {
   st.kills++;
-  if (st.drops >= P.perWave(wave)) return false;
-  const G = P.guaranteed(wave), owed = G - st.drops;
+  const X = st.extra || 0;
+  if (st.drops >= P.perWave(wave) + X) return false;
+  const G = P.guaranteed(wave) + X, owed = G - st.drops;
   if (owed > 0) {
     // the i-th guaranteed drop is due once kills pass forceAt * total * i / G, and always before the last husk
     const due = Math.min(Math.ceil(P.forceAt * total * (st.drops + 1) / G), total - 1);
