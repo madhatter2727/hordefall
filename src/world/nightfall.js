@@ -54,8 +54,8 @@ export class Nightfall {
     g.lampMul = (1 + NIGHT.lampBoost * e) * lerp(1, ST?.lamps ?? 1, bo); g.lampFlick = NIGHT.lampFlicker * e * (1 + 2 * bo);
     const f = THREE.MathUtils.clamp((e - NIGHT.flashOn) / (1 - NIGHT.flashOn), 0, 1);
     this.flash.intensity = g.state === 'play' || g.state === 'paused' ? NIGHT.flashlight * f * lerp(1, ST?.flashlight ?? 1, bo) : 0;
-    if (!force && Math.abs(this.applied - e) + Math.abs((this.appliedSw ?? 0) - sw0) < 0.002 && this.eyes === EYE_MATS.length) return;
-    this.applied = e; this.appliedSw = sw0;
+    if (!force && this.appliedType === ST && Math.abs(this.applied - e) + Math.abs((this.appliedSw ?? 0) - sw0) < 0.002 && this.eyes === EYE_MATS.length) return;
+    this.applied = e; this.appliedSw = sw0; this.appliedType = ST;
     const am = lerp(1, ST?.ambient ?? 1, bo);
     g.sun.intensity = lerp(NIGHT.sun[0], NIGHT.sun[1], e) * am; g.sun.color.lerpColors(D.sun, N.sun, e);
     this.hemi.intensity = lerp(NIGHT.hemi[0], NIGHT.hemi[1], e) * am; this.hemi.color.lerpColors(D.hemiSky, N.hemiSky, e); this.hemi.groundColor.lerpColors(D.hemiGround, N.hemiGround, e);
