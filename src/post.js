@@ -11,11 +11,11 @@ import { screenBloodTexture } from './world/textures.js';
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null }, time: { value: 0 }, damage: { value: 0 }, lowHealth: { value: 0 },
-    ads: { value: 0 }, aspect: { value: 1 }, flash: { value: 0 }, dead: { value: 0 }, acid: { value: 0 }, blood: { value: 0 }, bloodSeed: { value: 0 }, tBlood: { value: null },
+    ads: { value: 0 }, aspect: { value: 1 }, flash: { value: 0 }, dead: { value: 0 }, blood: { value: 0 }, bloodSeed: { value: 0 }, tBlood: { value: null },
   },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float time, damage, lowHealth, ads, aspect, flash, dead, acid, blood, bloodSeed; uniform sampler2D tBlood; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float time, damage, lowHealth, ads, aspect, flash, dead, blood, bloodSeed; uniform sampler2D tBlood; varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + time * 13.7) * 43758.5453); }
     void main(){
       vec2 c = vUv - 0.5; c.x *= aspect; float r = length(c);
@@ -34,10 +34,6 @@ const GradeShader = {
       float edge = smoothstep(0.25, 0.95, r);
       float pulse = lowHealth * (0.55 + 0.45 * sin(time * 6.0));
       col = mix(col, vec3(0.45, 0.0, 0.02), clamp(edge * (damage * 0.9 + pulse * 0.6), 0.0, 0.85));
-      // acid: sickly green wash, strongest at the edges, with a wobble
-      float ac = clamp(acid, 0.0, 1.0);
-      col = mix(col, col * vec3(0.6, 1.12, 0.45) + vec3(0.01, 0.05, 0.0), ac * 0.5);
-      col = mix(col, vec3(0.18, 0.55, 0.05), clamp(edge * ac * (0.75 + 0.25 * sin(time * 9.0 + vUv.y * 20.0)), 0.0, 0.55));
       // close-kill blood on the 'lens': edges first, slides down a little as it fades
       if (blood > 0.001) {
         vec2 bu = vUv; bu.x = bloodSeed > 0.5 ? 1.0 - bu.x : bu.x; bu.y += (1.0 - blood) * 0.06;
