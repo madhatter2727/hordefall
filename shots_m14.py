@@ -49,7 +49,7 @@ with sync_playwright() as p:
         def begin(w, name_banner=None):
             ev("game.horde.reset()"); ev("game.horde.running = true; game.horde.cleared = false; game.horde.hold = false"); go(cx, 0.05, cz, 0.0, 0.03)
             ev(f"__debug.wave({w}); __debug.night({w})"); ev("game.horde.running = true"); ev(f"(() => {{ for (let i = 0; i < 150; i++) game.nightfall.update(1/30, {w}); }})()")
-        begin(3); pg.wait_for_timeout(700); shot('m14-banner'); R['banner'] = ev("document.getElementById('banner-t').textContent + ' | ' + document.getElementById('banner-s').textContent + ' | ' + document.getElementById('banner').className")
+        begin(3); pg.wait_for_function("+getComputedStyle(document.getElementById('banner')).opacity > 0.97", timeout=60000); shot('m14-banner'); R['banner'] = ev("document.getElementById('banner-t').textContent + ' | ' + document.getElementById('banner-s').textContent + ' | ' + document.getElementById('banner').className")
         ev("(() => { const H = game.horde; for (const e of H.debugSpawn(14, 9, false, 'crawler', game.player.yaw + Math.PI)) e.attackCd = 99; })()"); gt(1.2); shot('m14-crawler-rush'); R['crawl'] = ev("__debug.info()")
         begin(8); gt(0.5); shot('m14-fog-wave'); R['fog'] = ev("__debug.special()")
         begin(18); gt(0.5); shot('m14-blackout'); R['blackout'] = ev("__debug.special()")
