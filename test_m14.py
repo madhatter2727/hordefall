@@ -107,8 +107,8 @@ with sync_playwright() as p:
           const seen = {}; const orig = H.spawn.bind(H); H.spawn = (k, at, idle) => { seen[k] = (seen[k] || 0) + 1; return orig(k, at, idle); };
           for (let w = 2; w <= 13; w++) { for (const k in seen) delete seen[k]; H.hold = false; H.cleared = false; H.wave = w - 1; H.toSpawn = 0; H.bossDelay = 0; H.nextWave(); let ended = false; const oe = game.onWaveEnd.bind(game); game.onWaveEnd = (n) => { ended = true; oe(n); }; let f = 0, maxAlive = 0;
             for (; f < 300 * 30 && !ended; f++) { game.time += 1/30; P.pos.set(4, 0, 6); P.health = P.maxHealth; H.update(1/30, game.time, game.camera); game.nightfall.update(1/30, H.wave); maxAlive = Math.max(maxAlive, H.aliveCount());
-              for (const e of H.enemies) { if (e.dead) continue; const d = Math.hypot(e.pos.x - 4, e.pos.z - 6); if (d < 7 && e.aware) { e.hp = 0; H.kill(e, e.pos.clone(), new V(0, 0, 1), 50, { id: 'ar' }, false); } } }
-            game.onWaveEnd = oe; rows.push({ w, special: H.special?.type || null, ended, sec: +(f / 30).toFixed(0), maxAlive, spawned: { ...seen } }); }
+              for (const e of H.enemies) { if (e.dead) continue; const d = Math.hypot(e.pos.x - 4, e.pos.z - 6); e.aware = true; if (d < 3.2) { e.hp = 0; H.kill(e, e.pos.clone(), new V(0, 0, 1), 50, { id: 'ar' }, false); } } }
+            game.onWaveEnd = oe; rows.push({ w, special: H.special?.type || null, ended, sec: +(f / 30).toFixed(0), maxAlive, spawned: { ...seen }, leaps: H.navStats.leaps, hops: H.navStats.hops }); }
           H.spawn = orig; H.reset(); H.running = false; game.state = 'play'; return rows; }""")
     R['errors'] = errs[:8]
     print(json.dumps(R, indent=1))

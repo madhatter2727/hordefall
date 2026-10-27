@@ -86,7 +86,7 @@ const ZOMBIE_SHADER = (u) => (sh) => {
       totalEmissiveRadiance += vec3(0.35, 1.0, 0.12) * uHue * uGlow * smoothstep(0.62, 0.8, zn(vLocal * 1.3 + 2.0));
       float crack = smoothstep(0.47, 0.5, zn(vLocal * 0.9 + 11.0)) * smoothstep(0.53, 0.5, zn(vLocal * 0.9 + 11.0));
       totalEmissiveRadiance += vec3(2.4, 0.7, 0.15) * uEmber * crack * (1.0 - wound);
-      totalEmissiveRadiance += vec3(1.0, 0.62, 0.12) * uBloat * (0.35 + 0.65 * smoothstep(0.25, 0.7, zn(vLocal * 1.1 + 5.0)));
+      totalEmissiveRadiance += vec3(0.5, 0.26, 0.04) * uBloat * (0.35 + 0.65 * smoothstep(0.25, 0.7, zn(vLocal * 1.1 + 5.0)));
       { // hit flash: hot rim + a faint body glow, so a struck husk pops without turning into a white mannequin
         float fres = pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 2.0);
         totalEmissiveRadiance += vec3(1.0, 0.42, 0.22) * uFlash * (0.06 + fres * 0.5);

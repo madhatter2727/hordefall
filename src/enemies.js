@@ -283,11 +283,11 @@ export class Horde {
     const g = Math.abs(at.x) > Math.abs(at.z) ? new THREE.Vector3(Math.sign(at.x) * (ARENA.half - 1.5), 0, clamp(at.z, -2.5, 2.5)) : new THREE.Vector3(clamp(at.x, -2.5, 2.5), 0, Math.sign(at.z) * (ARENA.half - 1.5));
     e.gatePt.copy(g); e.outside = Math.max(Math.abs(at.x), Math.abs(at.z)) > ARENA.half - 2;
     e.rig = this.takeRig(); e.ragdoll = false; e.ref = e.ref || {}; e.anim = null;
-    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.62, 0.6, 0.6] : T.bloater ? [1.15, 0.95, 0.7] : T.jumper ? [1.05, 0.8, 0.74] : [rand(0.88, 1.08), rand(0.9, 1.08), rand(0.85, 1.0)];
+    const tint = T.boss ? [0.42, 0.36, 0.36] : T.brute ? [0.62, 0.6, 0.6] : T.bloater ? [1.15, 0.95, 0.7] : T.jumper ? [1.3, 0.66, 0.54] : [rand(0.88, 1.08), rand(0.9, 1.08), rand(0.85, 1.0)];
     e.rig.u.uTint.value.setRGB(...tint); e.rig.u.uHue.value = 0; e.rig.u.uBloat.value = 0;
     for (const a of Object.values(e.rig.actions)) a.time = rand(0, 3);
     if (T.boss) { const B = e.rig.bones; B.Spine2.scale.set(1.32, 1.12, 1.4); B.Neck.scale.setScalar(0.8); B.LeftArm.scale.setScalar(1.18); B.RightArm.scale.setScalar(1.18); B.LeftUpLeg.scale.set(1.2, 1, 1.2); B.RightUpLeg.scale.set(1.2, 1, 1.2); e.rig.u.uEmber.value = 1; }
-    else if (T.brute) { const B = e.rig.bones; B.Spine2.scale.set(1.3, 1.08, 1.32); B.Neck.scale.setScalar(0.85); B.LeftArm.scale.setScalar(1.22); B.RightArm.scale.setScalar(1.22); B.LeftUpLeg.scale.set(1.15, 1, 1.15); B.RightUpLeg.scale.set(1.15, 1, 1.15); }
+    else if (T.brute) { const B = e.rig.bones; B.Spine1.scale.set(1.22, 1, 1.22); B.Spine2.scale.set(1.45, 1.1, 1.4); B.Neck.scale.setScalar(0.8); B.LeftArm.scale.setScalar(1.32); B.RightArm.scale.setScalar(1.32); B.LeftUpLeg.scale.set(1.28, 1, 1.28); B.RightUpLeg.scale.set(1.28, 1, 1.28); }
     else if (T.bloater) { const B = e.rig.bones; B.Spine.scale.set(1.5, 1.0, 1.75); B.Spine1.scale.set(1.12, 1, 1.15); B.LeftArm.scale.setScalar(0.92); B.RightArm.scale.setScalar(0.92); B.Neck.scale.setScalar(0.85); }
     else if (T.jumper) { const B = e.rig.bones; B.Spine2.scale.set(0.86, 1, 0.84); B.LeftUpLeg.scale.set(0.9, 1.06, 0.9); B.RightUpLeg.scale.set(0.9, 1.06, 0.9); B.LeftArm.scale.set(0.9, 1.1, 0.9); B.RightArm.scale.set(0.9, 1.1, 0.9); e.gait.walkMax = 1.5; e.gait.runMin = 0.5; }
     if (T.crawler) { e.crawl = true; e.crawlRef = false; e.gait.limp = 0; }
@@ -908,7 +908,7 @@ export class Horde {
     const k = Math.floor(e.pulsePh);
     if (k !== e.lastBeat) { e.lastBeat = k; if (!e.dead) this.hooks.audio.play('bloatBeat', this.spatial(e, { k: 1 - f })); }
     e.beat = 0.3 + 0.7 * Math.pow(0.5 + 0.5 * Math.sin(e.pulsePh * Math.PI * 2 - 1.2), 2);
-    e.flash = Math.max(e.flash, 0.08 + 0.3 * (1 - f) * e.beat);
+    e.flash = Math.max(e.flash, 0.05 + 0.18 * (1 - f) * e.beat);
   }
   burst(e) {
     const c = e.joints[J.pelvis].clone().lerp(e.joints[J.chest], 0.35);
@@ -980,6 +980,7 @@ export class Horde {
       case 1: {
         e.facePlayer = e.jkind === 'leap';
         if (e.stagger > 0.3) { e.jp = 0; e.jcd = 1; return 0; }
+        e.flash = Math.max(e.flash, 0.2 + 0.45 * clamp(e.jt / (e.jkind === 'leap' ? J_.windup : J_.hopWindup), 0, 1) * (0.6 + 0.4 * Math.sin(e.jt * 40)));
         if (e.jt >= (e.jkind === 'leap' ? J_.windup : J_.hopWindup)) this.jumperLaunch(e);
         return 0;
       }
@@ -1027,26 +1028,26 @@ export class Horde {
   }
   // ---- attachments: armour plates on Brutes, glowing sac + warning ring on Bloaters (small pools, no per-zombie allocation)
   buildPlates(scene) {
-    const steel = new THREE.MeshStandardMaterial({ color: '#3b3836', roughness: 0.42, metalness: 0.9 });
-    const rust = new THREE.MeshStandardMaterial({ color: '#6a4a32', roughness: 0.55, metalness: 0.75 });
-    const strap = new THREE.MeshStandardMaterial({ color: '#1c1a19', roughness: 0.8, metalness: 0.3 });
+    const steel = new THREE.MeshStandardMaterial({ color: '#77726e', roughness: 0.5, metalness: 0.55 });
+    const rust = new THREE.MeshStandardMaterial({ color: '#8d5c36', roughness: 0.6, metalness: 0.4 });
+    const strap = new THREE.MeshStandardMaterial({ color: '#2b2725', roughness: 0.85, metalness: 0.2 });
     const L = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
     const rb = (w, h, d, r = 0.02) => new RoundedBoxGeometry(w, h, d, 2, r);
     const cap = (r) => new THREE.SphereGeometry(r, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
     const spike = new THREE.ConeGeometry(0.04, 0.2, 6);
     const defs = [
       [rb(0.58, 0.42, 0.15, 0.04), steel, 0, L(0, 0.3, 0.15, -0.1)],   // breastplate
-      [rb(0.5, 0.44, 0.12, 0.04), steel, 0, L(0, 0.3, -0.15, 0.1)],    // back plate
+      [rb(0.46, 0.38, 0.07, 0.03), steel, 0, L(0, 0.3, -0.13, 0.1)],    // back plate
       [rb(0.5, 0.13, 0.16, 0.03), rust, 0, L(0, 0.07, 0.12, 0.1)],     // belly band
       [rb(0.6, 0.06, 0.2, 0.02), strap, 0, L(0, 0.2, 0.0)],           // belt strap
     ];
-    for (const pi of [2, 4]) { defs.push([cap(0.2), steel, pi, L(0, 0.03, 0, 0, 0, 0, 1.2, 1, 1.2)]); for (let k = 0; k < 3; k++) defs.push([spike, rust, pi, L((k - 1) * 0.07, 0.09 + k * 0.03, -0.02 - k * 0.02, -0.6 - k * 0.2, 0, (k - 1) * 0.35)]); }
-    for (const pi of [3, 5]) defs.push([new THREE.CylinderGeometry(0.09, 0.105, 0.22, 10), rust, pi, L(0, 0.13, 0)]);
+    for (const pi of [2, 4]) { defs.push([cap(0.17), steel, pi, L(0, 0.02, 0, Math.PI, 0, 0, 1.15, 0.8, 1.15)]); defs.push([spike, rust, pi, L(0, -0.12, 0, Math.PI, 0, 0, 0.9, 0.7, 0.9)]); }
+    for (const pi of [3, 5]) defs.push([new THREE.CylinderGeometry(0.075, 0.09, 0.2, 10), rust, pi, L(0, 0.15, 0)]);
     for (const pi of [6, 8]) defs.push([rb(0.21, 0.34, 0.12, 0.03), steel, pi, L(0, 0.2, 0.09), true]);
     for (const pi of [7, 9]) defs.push([rb(0.16, 0.3, 0.1, 0.025), rust, pi, L(0, 0.2, 0.07), true]);
-    defs.push([cap(0.15), steel, 1, L(0, 0.2, -0.005, 0, 0, 0, 1, 1.05, 1.05)]);       // helm
-    defs.push([rb(0.17, 0.05, 0.05, 0.015), strap, 1, L(0, 0.19, 0.12)]);             // visor slit
-    defs.push([spike, rust, 1, L(0, 0.34, -0.01, 0, 0, 0, 1, 0.9, 1)]);                // crest spike
+    defs.push([cap(0.17), steel, 1, L(0, 0.1, -0.005, 0, 0, 0, 1, 1, 1.05)]);       // helm
+    defs.push([rb(0.2, 0.05, 0.05, 0.015), strap, 1, L(0, 0.11, 0.15)]);             // visor slit
+    defs.push([spike, rust, 1, L(0, 0.27, -0.01, 0, 0, 0, 1, 0.9, 1)]);                // crest spike
     this.plateSets = Array.from({ length: 5 }, () => {
       const pieces = defs.map(([geo, mat, part, local, leg]) => { const m = new THREE.Mesh(geo, mat); m.matrixAutoUpdate = false; m.frustumCulled = false; m.visible = false; m.castShadow = false; scene.add(m); return { m, part, local, leg: !!leg }; });
       return { kind: 'brute', pieces, owner: null };
@@ -1054,8 +1055,8 @@ export class Horde {
     // bloater: a swollen glowing sac on the belly + a halo, plus a blast-radius ring on the ground
     const sacG = new THREE.SphereGeometry(0.25, 18, 14), haloG = new THREE.SphereGeometry(0.42, 16, 12), ringG = new THREE.RingGeometry(0.94, 1, 56).rotateX(-Math.PI / 2);
     this.bloatSets = Array.from({ length: 4 }, () => {
-      const sacM = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.5, 0.3), transparent: true, opacity: 0.8, toneMapped: false });
-      const haloM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.7, 0.12), transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+      const sacM = new THREE.MeshBasicMaterial({ color: new THREE.Color(2, 0.8, 0.1), transparent: true, opacity: 0.7, toneMapped: false });
+      const haloM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 0.45, 0.06), transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
       const ringM = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.1, 0.2), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
       const sac = new THREE.Mesh(sacG, sacM), halo = new THREE.Mesh(haloG, haloM), ring = new THREE.Mesh(ringG, ringM);
       for (const m of [sac, halo]) { m.matrixAutoUpdate = false; m.frustumCulled = false; m.visible = false; scene.add(m); }
@@ -1104,8 +1105,8 @@ export class Horde {
       set.sac.matrix.multiplyMatrices(R, tmpM.makeTranslation(0, 0.12, 0.13).scale(tS.set(1.05 + 0.1 * beat, 1.0 + 0.1 * beat, 0.9 + 0.12 * beat)));
       set.halo.matrix.multiplyMatrices(R, tmpM.makeTranslation(0, 0.12, 0.1).scale(tS.setScalar(0.9 + 0.35 * beat)));
       set.sac.matrixWorldNeedsUpdate = set.halo.matrixWorldNeedsUpdate = true;
-      set.sacM.color.setRGB(2.2 + 2.4 * beat, 1.0 + 0.9 * beat, 0.2 + 0.1 * beat);
-      set.haloM.opacity = 0.12 + 0.28 * beat;
+      set.sacM.color.setRGB(0.9 + 1.5 * beat, 0.35 + 0.5 * beat, 0.06 + 0.05 * beat);
+      set.haloM.opacity = 0.05 + 0.14 * beat;
       if (set.ring.visible) { set.ring.position.set(e.pos.x, e.pos.y + 0.06, e.pos.z); set.ring.scale.setScalar(BL.blast.radius); set.ringM.opacity = (0.25 + 0.5 * beat) * clamp((BL.warnAt - f) / 0.2 + 0.4, 0, 1); }
     }
   }
